@@ -1,0 +1,2 @@
+# Install API dependencies from the api package
+-r api/requirements.txt

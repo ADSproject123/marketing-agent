@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+data/videos/*
+!data/videos/.gitkeep
+data/downloads/*
+!data/downloads/.gitkeep
+data/*.db
+*.mp4
+.DS_Store
+.pytest_cache/
+.mypy_cache/
+web/node_modules/
+web/dist/
