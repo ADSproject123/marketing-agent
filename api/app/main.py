@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -48,14 +49,20 @@ async def run() -> None:
     await application.start()
     await application.updater.start_polling(allowed_updates=["message", "callback_query"])
     await sync_user_telegram_bots(hub)
+
+    # Render (and most PaaS) inject PORT and expect 0.0.0.0 binding.
+    host = os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
+    port = int(os.getenv("PORT", "8787"))
     logger.info(
-        "Telegram approval gate online. API + dashboard at http://127.0.0.1:8787"
+        "Telegram approval gate online. API listening on http://%s:%s",
+        host,
+        port,
     )
 
     config = uvicorn.Config(
         web_app,
-        host="127.0.0.1",
-        port=8787,
+        host=host,
+        port=port,
         log_level="info",
         loop="asyncio",
     )
