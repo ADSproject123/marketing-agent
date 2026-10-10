@@ -114,6 +114,41 @@ Open [http://127.0.0.1:8787](http://127.0.0.1:8787).
 
 For caption-only testing without NotebookLM video, set `SKIP_NOTEBOOKLM=1` in `.env`.
 
+## Deploy (Vercel web + Render API)
+
+### 1. Render — API
+
+1. Push this repo to GitHub.
+2. [Render](https://dashboard.render.com) → **New** → **Blueprint** (uses `render.yaml`), or **Web Service** with:
+   - **Root directory:** `api`
+   - **Build:** `pip install -r requirements.txt`
+   - **Start:** `python run.py`
+3. Set env vars (same as `.env`): `AUTH_SECRET`, `TELEGRAM_BOT_TOKEN`, `ALLOWED_TELEGRAM_USER_ID`, `GEMINI_API_KEYS`, `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, plus:
+   - `PUBLIC_API_URL=https://YOUR-SERVICE.onrender.com`
+   - `FRONTEND_URL=https://YOUR-APP.vercel.app`
+   - `SKIP_NOTEBOOKLM=1` recommended on free Render (NotebookLM cookies need a real browser machine)
+4. Copy the service URL (e.g. `https://marketing-agent-api.onrender.com`).
+
+Free Render sleeps when idle — first request after sleep can take ~30–60s.
+
+### 2. Vercel — Web
+
+1. [Vercel](https://vercel.com) → **Add New Project** → import the repo.
+2. **Root Directory:** `web`
+3. Framework: Vite (auto). Build: `npm run build`. Output: `dist`.
+4. Env var:
+   - `VITE_API_URL=https://YOUR-SERVICE.onrender.com` (no trailing slash)
+5. Deploy. Set that Vercel URL as `FRONTEND_URL` on Render, then **redeploy** the API so CORS picks it up.
+
+### 3. Meta Facebook redirect
+
+Add both (local + prod) under Facebook Login → Valid OAuth Redirect URIs:
+
+```
+http://127.0.0.1:8787/api/integrations/facebook/callback
+https://YOUR-SERVICE.onrender.com/api/integrations/facebook/callback
+```
+
 ## Telegram usage (approval only)
 
 | Action | What it does |

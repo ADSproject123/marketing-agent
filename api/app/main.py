@@ -15,8 +15,9 @@ if str(API_DIR) not in sys.path:
     sys.path.insert(0, str(API_DIR))
 
 from app.config import get_settings
-from app.runtime import init_runtime
+from app.runtime import init_runtime, sync_user_telegram_bots
 from app.telegram_bot.handlers import BotHandlers
+from app.telegram_bot.hub import TelegramBotHub
 from app.webapp import app as web_app
 
 logging.basicConfig(
@@ -35,6 +36,8 @@ async def run() -> None:
     )
     runtime = init_runtime(settings=settings, bot=application.bot)
     handlers = BotHandlers(runtime.settings, runtime.store, runtime.pipeline)
+    hub = TelegramBotHub(handlers)
+    runtime.bot_hub = hub
 
     application.add_handler(CommandHandler(["start", "help"], handlers.help_cmd))
     application.add_handler(CommandHandler("status", handlers.status_cmd))
@@ -44,6 +47,7 @@ async def run() -> None:
     await application.initialize()
     await application.start()
     await application.updater.start_polling(allowed_updates=["message", "callback_query"])
+    await sync_user_telegram_bots(hub)
     logger.info(
         "Telegram approval gate online. API + dashboard at http://127.0.0.1:8787"
     )
@@ -59,6 +63,7 @@ async def run() -> None:
     try:
         await server.serve()
     finally:
+        await hub.shutdown()
         await application.updater.stop()
         await application.stop()
         await application.shutdown()

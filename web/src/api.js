@@ -1,5 +1,15 @@
 const TOKEN_KEY = "ma_auth_token";
 
+/** Empty in local Vite (proxy). Set VITE_API_URL on Vercel → your Render API URL. */
+const API_BASE = String(import.meta.env.VITE_API_URL || "")
+  .trim()
+  .replace(/\/$/, "");
+
+function apiUrl(path) {
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY) || "";
 }
@@ -26,7 +36,7 @@ async function api(path, { method = "GET", body, auth = true } = {}) {
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -40,7 +50,7 @@ async function api(path, { method = "GET", body, auth = true } = {}) {
 }
 
 export async function fetchHealth() {
-  const res = await fetch("/api/health");
+  const res = await fetch(apiUrl("/api/health"));
   if (!res.ok) throw new Error("down");
   return res.json();
 }
@@ -74,4 +84,34 @@ export async function startJob({ brief = "", urls = [], notes = null, template =
     method: "POST",
     body: { brief, urls, notes, template },
   });
+}
+
+export async function fetchIntegrations() {
+  return api("/api/integrations");
+}
+
+export async function saveIntegrations(payload) {
+  return api("/api/integrations", {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function startFacebookConnect() {
+  return api("/api/integrations/facebook/connect");
+}
+
+export async function fetchFacebookPendingPages() {
+  return api("/api/integrations/facebook/pages");
+}
+
+export async function selectFacebookPage(pageId) {
+  return api("/api/integrations/facebook/select", {
+    method: "POST",
+    body: { page_id: pageId },
+  });
+}
+
+export async function disconnectFacebook() {
+  return api("/api/integrations/facebook", { method: "DELETE" });
 }

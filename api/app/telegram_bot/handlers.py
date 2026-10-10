@@ -8,6 +8,7 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from app.config import Settings
+from app.integrations.store import IntegrationStore
 from app.jobs.pipeline import Pipeline
 from app.jobs.store import JobStore
 from app.notebooklm.client import check_auth
@@ -22,9 +23,14 @@ class BotHandlers:
         self.store = store
         self.pipeline = pipeline
 
+    def _allowed_ids(self) -> set[int]:
+        ids = {int(self.settings.allowed_telegram_user_id)}
+        ids |= IntegrationStore().list_telegram_user_ids()
+        return ids
+
     def _allowed(self, update: Update) -> bool:
         user = update.effective_user
-        return bool(user and user.id == self.settings.allowed_telegram_user_id)
+        return bool(user and user.id in self._allowed_ids())
 
     async def _reject(self, update: Update) -> None:
         if update.effective_message:

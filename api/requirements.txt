@@ -1,5 +1,6 @@
 aiofiles==25.1.0
 anyio==4.15.1
+cryptography==44.0.2
 fastapi==0.115.12
 google-genai==2.29.0
 httptools==0.8.0

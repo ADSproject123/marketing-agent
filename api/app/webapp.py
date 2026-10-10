@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -19,11 +21,32 @@ if str(API_DIR) not in sys.path:
 from app.auth.security import create_token, verify_token
 from app.auth.store import UserStore
 from app.config import DB_PATH, WEB_DIST
+from app.integrations import facebook_oauth
+from app.integrations.store import IntegrationStore
 from app.jobs.store import JobSource, JobStore
+from app.notebooklm.client import check_auth
 from app.runtime import get_runtime
 
 URL_RE = re.compile(r"https?://[^\s<>\"']+")
 bearer = HTTPBearer(auto_error=False)
+
+
+def _cors_origins() -> list[str]:
+    origins = {
+        "http://127.0.0.1:5173",
+        "http://localhost:5173",
+        "http://127.0.0.1:8787",
+        "http://localhost:8787",
+    }
+    front = (os.getenv("FRONTEND_URL") or "").strip().rstrip("/")
+    if front:
+        origins.add(front)
+    extra = (os.getenv("CORS_ORIGINS") or "").strip()
+    for part in extra.split(","):
+        origin = part.strip().rstrip("/")
+        if origin:
+            origins.add(origin)
+    return sorted(origins)
 
 # Keep in sync with web/src/templates.js labels
 TEMPLATE_LABELS = {
@@ -36,6 +59,13 @@ TEMPLATE_LABELS = {
 }
 
 app = FastAPI(title="Marketing Agent", docs_url=None, redoc_url=None)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class CreateJobRequest(BaseModel):
@@ -56,8 +86,26 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
 
 
+class IntegrationsUpdateRequest(BaseModel):
+    telegram_bot_token: str | None = Field(default=None, max_length=200)
+    telegram_user_id: int | None = None
+    gemini_api_keys: str | None = Field(default=None, max_length=4000)
+    gemini_model: str | None = Field(default=None, max_length=120)
+    skip_notebooklm: bool | None = None
+    clear_telegram_bot_token: bool = False
+    clear_gemini_api_keys: bool = False
+
+
+class FacebookSelectPageRequest(BaseModel):
+    page_id: str = Field(min_length=1, max_length=64)
+
+
 def _users() -> UserStore:
     return UserStore()
+
+
+def _integrations() -> IntegrationStore:
+    return IntegrationStore()
 
 
 def _job_stage(job) -> str:
@@ -170,17 +218,201 @@ def me(user: dict = Depends(_require_user)) -> dict:
     return {"ok": True, "user": user}
 
 
+@app.get("/api/integrations")
+def get_integrations(user: dict = Depends(_require_user)) -> dict:
+    integ = _integrations().get(user["id"])
+    status = (
+        integ.public_status()
+        if integ
+        else {
+            "telegram_bot_token_set": False,
+            "telegram_user_id": None,
+            "gemini_api_keys_set": False,
+            "gemini_model": "",
+            "facebook_app_id": "",
+            "facebook_page_id": "",
+            "facebook_page_name": "",
+            "facebook_page_access_token_set": False,
+            "facebook_connected": False,
+            "skip_notebooklm": False,
+            "updated_at": None,
+            "ready": {
+                "telegram": False,
+                "gemini": False,
+                "facebook": False,
+                "notebooklm": "server",
+            },
+        }
+    )
+    return {
+        "ok": True,
+        "integrations": status,
+        "facebook_oauth": {
+            "configured": facebook_oauth.facebook_oauth_configured(),
+            "pending_pages": facebook_oauth.get_pending_pages(user["id"]),
+        },
+        "notebooklm": {
+            "server_authenticated": check_auth(),
+            "note": (
+                "NotebookLM uses Google browser login on the server host. "
+                "Ask the operator to run: notebooklm login --browser-cookies chrome"
+            ),
+        },
+    }
+
+
+@app.put("/api/integrations")
+async def update_integrations(
+    body: IntegrationsUpdateRequest,
+    user: dict = Depends(_require_user),
+) -> dict:
+    try:
+        integ = _integrations().upsert(
+            user["id"],
+            telegram_bot_token=body.telegram_bot_token,
+            telegram_user_id=body.telegram_user_id,
+            gemini_api_keys=body.gemini_api_keys,
+            gemini_model=body.gemini_model,
+            skip_notebooklm=body.skip_notebooklm,
+            clear_telegram_bot_token=body.clear_telegram_bot_token,
+            clear_gemini_api_keys=body.clear_gemini_api_keys,
+        )
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Start polling the user's Telegram bot if they provided one.
+    try:
+        runtime = get_runtime()
+        if runtime.bot_hub and integ.telegram_bot_token:
+            await runtime.bot_hub.ensure_token(integ.telegram_bot_token)
+    except RuntimeError:
+        pass
+    except Exception:
+        # Settings still saved; bot polling can retry on next job/start.
+        pass
+
+    return {
+        "ok": True,
+        "integrations": integ.public_status(),
+        "message": "Integrations saved.",
+    }
+
+
+@app.get("/api/integrations/facebook/connect")
+def facebook_connect(user: dict = Depends(_require_user)) -> dict:
+    if not facebook_oauth.facebook_oauth_configured():
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Facebook Login is not configured on the server. "
+                "Set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET in .env, and add the OAuth "
+                f"redirect URI: {facebook_oauth.oauth_redirect_uri()}"
+            ),
+        )
+    try:
+        url = facebook_oauth.build_oauth_url(user["id"])
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        "url": url,
+        "redirect_uri": facebook_oauth.oauth_redirect_uri(),
+    }
+
+
+@app.get("/api/integrations/facebook/callback")
+async def facebook_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    from urllib.parse import quote
+
+    front = facebook_oauth.frontend_base()
+
+    def fail(msg: str) -> RedirectResponse:
+        return RedirectResponse(
+            f"{front}/dashboard/settings?facebook=error&message={quote(msg[:180])}"
+        )
+
+    if error:
+        return fail(error_description or error)
+    if not code or not state:
+        return fail("missing_code")
+    account_id = facebook_oauth.verify_state(state)
+    if not account_id:
+        return fail("invalid_state")
+    try:
+        user_token = await facebook_oauth.exchange_code_for_user_token(code)
+        pages = await facebook_oauth.fetch_managed_pages(user_token)
+    except Exception as exc:
+        return fail(str(exc))
+    if not pages:
+        return fail("No Facebook Pages found for this account.")
+    if len(pages) == 1:
+        facebook_oauth.save_page_connection(account_id, pages[0])
+        return RedirectResponse(f"{front}/dashboard/settings?facebook=connected")
+    facebook_oauth.stash_pending_pages(account_id, pages)
+    return RedirectResponse(f"{front}/dashboard/settings?facebook=pick")
+
+
+@app.get("/api/integrations/facebook/pages")
+def facebook_pending_pages(user: dict = Depends(_require_user)) -> dict:
+    return {
+        "ok": True,
+        "pages": facebook_oauth.get_pending_pages(user["id"]),
+        "oauth_configured": facebook_oauth.facebook_oauth_configured(),
+    }
+
+
+@app.post("/api/integrations/facebook/select")
+def facebook_select_page(
+    body: FacebookSelectPageRequest,
+    user: dict = Depends(_require_user),
+) -> dict:
+    try:
+        page = facebook_oauth.select_pending_page(user["id"], body.page_id)
+        facebook_oauth.save_page_connection(user["id"], page)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    integ = _integrations().get(user["id"])
+    return {
+        "ok": True,
+        "integrations": integ.public_status() if integ else {},
+        "message": f"Connected to {page['name']}.",
+    }
+
+
+@app.delete("/api/integrations/facebook")
+def facebook_disconnect(user: dict = Depends(_require_user)) -> dict:
+    facebook_oauth.clear_page_connection(user["id"])
+    integ = _integrations().get(user["id"])
+    return {
+        "ok": True,
+        "integrations": integ.public_status()
+        if integ
+        else {
+            "facebook_connected": False,
+            "facebook_page_name": "",
+            "facebook_page_id": "",
+            "ready": {"facebook": False},
+        },
+        "message": "Facebook disconnected.",
+    }
+
+
 @app.get("/api/jobs")
-def list_jobs(limit: int = 20, _user: dict = Depends(_require_user)) -> dict:
+def list_jobs(limit: int = 20, user: dict = Depends(_require_user)) -> dict:
     limit = max(1, min(limit, 50))
-    jobs = _store().list_recent_all(limit=limit)
+    jobs = _store().list_recent_for_account(user["id"], limit=limit)
     return {"jobs": [_job_payload(j) for j in jobs]}
 
 
 @app.get("/api/jobs/{job_id}")
-def get_job(job_id: str, _user: dict = Depends(_require_user)) -> dict:
+def get_job(job_id: str, user: dict = Depends(_require_user)) -> dict:
     job = _store().get(job_id)
-    if not job:
+    if not job or job.owner_account_id != user["id"]:
         raise HTTPException(status_code=404, detail="Job not found")
     return _job_payload(job)
 
@@ -188,7 +420,7 @@ def get_job(job_id: str, _user: dict = Depends(_require_user)) -> dict:
 @app.post("/api/jobs")
 async def create_job(
     body: CreateJobRequest = CreateJobRequest(),
-    _user: dict = Depends(_require_user),
+    user: dict = Depends(_require_user),
 ) -> dict:
     try:
         runtime = get_runtime()
@@ -197,6 +429,18 @@ async def create_job(
             status_code=503,
             detail="Agent runtime not ready. Start with: python api/run.py",
         ) from exc
+
+    integ = _integrations().get(user["id"])
+    if not integ or not integ.telegram_user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Add your Telegram user ID in Settings before starting a job.",
+        )
+    if not integ.gemini_api_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="Add at least one Gemini API key in Settings before starting a job.",
+        )
 
     brief = (body.brief or "").strip()
     template = (body.template or "").strip()
@@ -232,7 +476,15 @@ async def create_job(
         elif template in TEMPLATE_LABELS:
             brief = f"Template: {TEMPLATE_LABELS[template]}"
 
-    job = runtime.create_and_start(brief=brief, sources=sources)
+    try:
+        job = runtime.create_and_start(
+            brief=brief,
+            sources=sources,
+            owner_account_id=user["id"],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     return {
         "ok": True,
         "job": _job_payload(job),

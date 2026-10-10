@@ -9,13 +9,13 @@ import {
 } from "../flow";
 
 const INK = "#15202b";
-const TEAL = "#0f766e";
-const MUTED = "#8aa0b2";
+const TEAL = "#6374d8";
+const MUTED = "#a1afc9";
 const DANGER = "#b42318";
 const OK = "#1b7a4a";
 
 function fillFor(state) {
-  if (state === "current") return "rgba(15,118,110,0.16)";
+  if (state === "current") return "#eef1ff";
   if (state === "done") return "rgba(27,122,74,0.1)";
   if (state === "failed") return "rgba(180,35,24,0.12)";
   return "rgba(255,255,255,0.85)";
@@ -25,7 +25,7 @@ function strokeFor(state) {
   if (state === "current") return TEAL;
   if (state === "done") return OK;
   if (state === "failed") return DANGER;
-  return INK;
+  return "#ccd5e8";
 }
 
 export default function FlowDiagram({ job }) {
@@ -34,7 +34,7 @@ export default function FlowDiagram({ job }) {
   const activeEdges = activeEdgeKeys(job);
 
   return (
-    <div className="flow-scroll">
+    <div className="flow-scroll" tabIndex={0} role="region" aria-label="Campaign workflow. Scroll horizontally to explore all stages.">
       <svg
         viewBox={`0 0 ${layout.width} ${layout.height}`}
         width={layout.width}
@@ -104,7 +104,7 @@ export default function FlowDiagram({ job }) {
           const n = layout.nodes[id];
           const step = STEPS[id];
           const state = states[id];
-          const opacity = state === "idle" ? 0.38 : state === "pending" ? 0.55 : 1;
+          const opacity = state === "idle" ? 0.8 : state === "pending" ? 0.8 : 1;
           const sub =
             state === "current"
               ? "in progress"

@@ -51,6 +51,7 @@ class Job:
     facebook_post_url: str | None = None
     error: str | None = None
     telegram_preview_message_id: int | None = None
+    owner_account_id: str | None = None
     created_at: str = field(default_factory=lambda: _utcnow())
     updated_at: str = field(default_factory=lambda: _utcnow())
 
@@ -63,6 +64,7 @@ class Job:
     @classmethod
     def from_row(cls, row: sqlite3.Row) -> "Job":
         sources_raw = json.loads(row["sources"] or "[]")
+        keys = row.keys()
         return cls(
             id=row["id"],
             chat_id=row["chat_id"],
@@ -81,6 +83,7 @@ class Job:
             facebook_post_url=row["facebook_post_url"],
             error=row["error"],
             telegram_preview_message_id=row["telegram_preview_message_id"],
+            owner_account_id=row["owner_account_id"] if "owner_account_id" in keys else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -128,11 +131,18 @@ class JobStore:
                     facebook_post_url TEXT,
                     error TEXT,
                     telegram_preview_message_id INTEGER,
+                    owner_account_id TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
                 """
             )
+            cols = {
+                r[1]
+                for r in conn.execute("PRAGMA table_info(jobs)").fetchall()
+            }
+            if "owner_account_id" not in cols:
+                conn.execute("ALTER TABLE jobs ADD COLUMN owner_account_id TEXT")
 
     def create_job(
         self,
@@ -142,6 +152,7 @@ class JobStore:
         brief: str,
         sources: list[JobSource] | None = None,
         status: JobStatus = JobStatus.COLLECTING,
+        owner_account_id: str | None = None,
     ) -> Job:
         job = Job(
             id=str(uuid.uuid4()),
@@ -150,6 +161,7 @@ class JobStore:
             brief=brief.strip(),
             status=status,
             sources=sources or [],
+            owner_account_id=owner_account_id,
         )
         with self._connect() as conn:
             row = job.to_row()
@@ -159,12 +171,12 @@ class JobStore:
                     id, chat_id, user_id, brief, status, sources, caption, title,
                     steering_prompt, video_format, video_path, notebook_id, artifact_id,
                     facebook_post_id, facebook_post_url, error,
-                    telegram_preview_message_id, created_at, updated_at
+                    telegram_preview_message_id, owner_account_id, created_at, updated_at
                 ) VALUES (
                     :id, :chat_id, :user_id, :brief, :status, :sources, :caption, :title,
                     :steering_prompt, :video_format, :video_path, :notebook_id, :artifact_id,
                     :facebook_post_id, :facebook_post_url, :error,
-                    :telegram_preview_message_id, :created_at, :updated_at
+                    :telegram_preview_message_id, :owner_account_id, :created_at, :updated_at
                 )
                 """,
                 row,
@@ -216,6 +228,19 @@ class JobStore:
             )
             return [Job.from_row(r) for r in cur.fetchall()]
 
+    def list_recent_for_account(self, owner_account_id: str, limit: int = 20) -> list[Job]:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                SELECT * FROM jobs
+                WHERE owner_account_id = ?
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (owner_account_id, limit),
+            )
+            return [Job.from_row(r) for r in cur.fetchall()]
+
     def update(self, job_id: str, **fields: Any) -> Job:
         if not fields:
             job = self.get(job_id)
@@ -238,6 +263,7 @@ class JobStore:
             "facebook_post_url",
             "error",
             "telegram_preview_message_id",
+            "owner_account_id",
         }
         unknown = set(fields) - allowed
         if unknown:

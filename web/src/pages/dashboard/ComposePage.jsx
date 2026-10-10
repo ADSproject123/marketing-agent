@@ -1,4 +1,5 @@
 import ComposeForm from "../../components/ComposeForm";
+import Icon from "../../components/Icon";
 import { useDashboard } from "../../dashboard/DashboardContext";
 
 export default function ComposePage() {
@@ -22,11 +23,10 @@ export default function ComposePage() {
     <div className="dash-page">
       <header className="dash-page-head">
         <div>
-          <p className="panel-kicker">Compose</p>
-          <h1>Start a campaign job</h1>
+          <p className="panel-kicker">Create</p>
+          <h1>New campaign</h1>
           <p className="dash-page-lede">
-            Pick a template, add optional sources, then start. You’ll be taken to the
-            pipeline to track progress.
+            Turn your next idea into a video campaign. Start with a brief and follow its progress in real time.
           </p>
         </div>
       </header>
@@ -50,31 +50,33 @@ export default function ComposePage() {
         <aside className="panel readiness" aria-labelledby="ready-title">
           <div className="panel-head">
             <div>
-              <p className="panel-kicker">Operations</p>
-              <h2 id="ready-title">Run checklist</h2>
+              <p className="panel-kicker">Your workflow</p>
+              <h2 id="ready-title">Ready to create</h2>
             </div>
           </div>
           <ul className="ready-list">
             <li className={online ? "is-ok" : ""}>
-              <span>Python runtime</span>
-              <strong>{online ? "Connected" : "Not connected"}</strong>
+              <span className="ready-item-label"><span className="ready-icon"><Icon name="activity" size={17} /></span>Campaign service</span>
+              <strong>{online ? "Connected" : "Offline"}</strong>
             </li>
             <li>
-              <span>Approval gate</span>
+              <span className="ready-item-label"><span className="ready-icon"><Icon name="send" size={17} /></span>Review & approval</span>
               <strong>Telegram</strong>
             </li>
             <li>
-              <span>Video engine</span>
+              <span className="ready-item-label"><span className="ready-icon"><Icon name="video" size={17} /></span>Video creation</span>
               <strong>NotebookLM</strong>
             </li>
             <li>
-              <span>Publish target</span>
+              <span className="ready-item-label"><span className="ready-icon"><Icon name="globe" size={17} /></span>Publishing</span>
               <strong>Facebook Page</strong>
             </li>
           </ul>
-          <p className="ready-note">
-            Jobs can take several minutes while NotebookLM renders the short.
-          </p>
+          <div className="ready-callout">
+            <Icon name="shield" size={21} />
+            <div><h3>You’re always in control</h3><p>Your preview arrives in Telegram. Approve it when you’re happy, or decline to stop the campaign.</p></div>
+          </div>
+          <p className="ready-note"><Icon name="clock" size={15} /> Video creation usually takes a few minutes.</p>
         </aside>
       </div>
     </div>

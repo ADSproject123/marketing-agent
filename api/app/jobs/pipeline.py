@@ -10,7 +10,8 @@ from telegram.constants import ParseMode
 
 from app.config import Settings
 from app.facebook.poster import post_page_video
-from app.jobs.store import JobSource, JobStatus, JobStore
+from app.integrations.resolve import resolve_settings_for_account
+from app.jobs.store import Job, JobSource, JobStatus, JobStore
 from app.llm.caption import draft_caption_package
 from app.notebooklm.client import NotebookLMAuthError, generate_video_overview
 from app.telegram_bot.messages import approval_keyboard, format_preview_caption
@@ -27,23 +28,34 @@ class Pipeline:
         self.store = store
         self.bot = bot
 
+    def _settings_for(self, job: Job) -> Settings:
+        return resolve_settings_for_account(job.owner_account_id, base=self.settings)
+
+    def _bot_for(self, job: Job, settings: Settings | None = None) -> Bot:
+        settings = settings or self._settings_for(job)
+        if settings.telegram_bot_token != self.settings.telegram_bot_token:
+            return Bot(token=settings.telegram_bot_token)
+        return self.bot
+
     async def run_generation(self, job_id: str) -> None:
         job = self.store.get(job_id)
         if not job:
             logger.error("Job %s not found", job_id)
             return
 
+        settings = self._settings_for(job)
+        bot = self._bot_for(job, settings)
         self.store.update(job_id, status=JobStatus.GENERATING, error=None)
 
         async def notify(text: str) -> None:
             try:
-                await self.bot.send_message(chat_id=job.chat_id, text=text)
+                await bot.send_message(chat_id=job.chat_id, text=text)
             except Exception:
                 logger.exception("Failed to send progress to Telegram")
 
         try:
             await notify("Gemini drafting campaign, caption, and video source…")
-            package = draft_caption_package(self.settings, job.brief, job.sources)
+            package = draft_caption_package(settings, job.brief, job.sources)
             # Keep user URLs/notes, plus Gemini's generated script for NotebookLM.
             merged_sources = list(job.sources) + [
                 JobSource(
@@ -63,14 +75,14 @@ class Pipeline:
             )
 
             video_path: Path | None = None
-            if self.settings.skip_notebooklm:
+            if settings.skip_notebooklm:
                 await notify(
                     "SKIP_NOTEBOOKLM=1 — skipping video generation for Telegram/Gemini test."
                 )
                 self.store.update(job_id, status=JobStatus.AWAITING_APPROVAL)
             else:
                 notebook_id, artifact_id, video_path = await generate_video_overview(
-                    self.settings,
+                    settings,
                     job_id=job_id,
                     brief=package.brief,
                     sources=merged_sources,
@@ -87,13 +99,15 @@ class Pipeline:
                 )
 
             await self._send_preview(
+                bot=bot,
+                settings=settings,
                 chat_id=job.chat_id,
                 job_id=job_id,
                 title=package.title,
                 caption=package.caption,
                 video_path=video_path,
             )
-            if self.settings.facebook_enabled:
+            if settings.facebook_enabled:
                 await notify("Ready for review — Approve posts to Facebook, Deny cancels.")
             else:
                 await notify(
@@ -116,6 +130,8 @@ class Pipeline:
     async def _send_preview(
         self,
         *,
+        bot: Bot,
+        settings: Settings,
         chat_id: int,
         job_id: str,
         title: str,
@@ -129,7 +145,7 @@ class Pipeline:
             size = video_path.stat().st_size
             if size <= TELEGRAM_VIDEO_LIMIT_BYTES:
                 with video_path.open("rb") as fh:
-                    message = await self.bot.send_video(
+                    message = await bot.send_video(
                         chat_id=chat_id,
                         video=fh,
                         caption=text[:1024],
@@ -138,7 +154,7 @@ class Pipeline:
                         supports_streaming=True,
                     )
             else:
-                message = await self.bot.send_message(
+                message = await bot.send_message(
                     chat_id=chat_id,
                     text=(
                         f"{text}\n\n"
@@ -151,10 +167,10 @@ class Pipeline:
         else:
             note = (
                 "\n\n<i>Caption-only preview (NotebookLM skipped).</i>"
-                if self.settings.skip_notebooklm
+                if settings.skip_notebooklm
                 else "\n\n<i>No video file attached.</i>"
             )
-            message = await self.bot.send_message(
+            message = await bot.send_message(
                 chat_id=chat_id,
                 text=f"{text}{note}",
                 parse_mode=ParseMode.HTML,
@@ -170,14 +186,17 @@ class Pipeline:
         if job.status != JobStatus.AWAITING_APPROVAL:
             raise RuntimeError(f"Job {job_id} is not awaiting approval (status={job.status})")
 
-        if not self.settings.facebook_enabled:
+        settings = self._settings_for(job)
+        bot = self._bot_for(job, settings)
+
+        if not settings.facebook_enabled:
             self.store.update(job_id, status=JobStatus.POSTED, error=None)
-            await self.bot.send_message(
+            await bot.send_message(
                 chat_id=job.chat_id,
                 text=(
                     f"Approved job {job_id[:8]}.\n"
                     "Facebook is not configured, so nothing was posted.\n"
-                    "Add FACEBOOK_* values in .env when you are ready."
+                    "Add Facebook credentials in Dashboard → Settings."
                 ),
             )
             return
@@ -188,11 +207,11 @@ class Pipeline:
             )
 
         self.store.update(job_id, status=JobStatus.POSTING, error=None)
-        await self.bot.send_message(chat_id=job.chat_id, text="Posting to Facebook…")
+        await bot.send_message(chat_id=job.chat_id, text="Posting to Facebook…")
 
         try:
             result = await post_page_video(
-                self.settings,
+                settings,
                 video_path=Path(job.video_path),
                 title=job.title or "Marketing video",
                 description=job.caption or job.brief,
@@ -203,7 +222,7 @@ class Pipeline:
                 facebook_post_id=result.video_id,
                 facebook_post_url=result.post_url,
             )
-            await self.bot.send_message(
+            await bot.send_message(
                 chat_id=job.chat_id,
                 text=f"Posted to Facebook.\n{result.post_url}",
                 disable_web_page_preview=False,
@@ -215,7 +234,7 @@ class Pipeline:
                 status=JobStatus.AWAITING_APPROVAL,
                 error=str(exc),
             )
-            await self.bot.send_message(
+            await bot.send_message(
                 chat_id=job.chat_id,
                 text=f"Facebook post failed: {exc}\nYou can Approve again.",
                 reply_markup=approval_keyboard(job_id),
@@ -228,8 +247,9 @@ class Pipeline:
         if job.status not in {JobStatus.AWAITING_APPROVAL, JobStatus.COLLECTING, JobStatus.QUEUED}:
             raise RuntimeError(f"Job {job_id} cannot be denied (status={job.status})")
 
+        bot = self._bot_for(job)
         self.store.update(job_id, status=JobStatus.DENIED)
-        await self.bot.send_message(
+        await bot.send_message(
             chat_id=job.chat_id,
             text=f"Job {job_id[:8]} denied. Nothing was posted.",
         )
