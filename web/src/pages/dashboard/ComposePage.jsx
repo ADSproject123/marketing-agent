@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
 import ComposeForm from "../../components/ComposeForm";
+import StepWeeklyPlan from "../../components/compose/StepWeeklyPlan";
 import StoryboardEditor from "../../components/StoryboardEditor";
 import { Alert, Button, PageHeader, Panel } from "../../components/ui";
 import { useDashboard } from "../../dashboard/DashboardContext";
@@ -8,8 +8,9 @@ export default function ComposePage() {
   const {
     campaignDraft, campaignStep, businessView, setBusinessView, campaignErrors, promotions,
     profilesLoading, savingPromotion, profileError, starting, startStatus, startStatusClass,
-    onCampaignDraftChange, onPromotionSelect, onDemoSelect, onCampaignSubmit,
+    onCampaignDraftChange, onPromotionSelect, onDemoSelect, onCampaignSubmit, onPlanWeek,
     onCampaignBack, onCampaignEditStep,
+    weeklyPlan, weeklySelectedDays, onWeeklyToggleDay, onWeeklySelectAll, onCreateWeeklyDrafts,
     hasSavedDraft, onRestoreDraft, onDiscardDraft,
     scriptJob, storyboard, scriptErrors, scriptBusy, scriptStatus, scriptStatusClass,
     scriptDirty, scriptLoading, scriptLoadError, onStoryboardChange, onStoryboardAction, onReloadScript,
@@ -17,6 +18,7 @@ export default function ComposePage() {
   } = useDashboard();
   const pickingBusiness = campaignStep === 0 && businessView === "list";
   const reviewingScript = campaignStep === 5 && scriptJob && storyboard;
+  const reviewingWeek = campaignStep === 6 && Array.isArray(weeklyPlan) && weeklyPlan.length === 3;
 
   if (scriptLoading || scriptLoadError) return (
     <div className="dash-page">
@@ -46,11 +48,19 @@ export default function ComposePage() {
       {pickingBusiness ? null : (
         <PageHeader
           kicker="Create"
-          title={reviewingScript ? "Your campaign script" : "New campaign"}
+          title={
+            reviewingScript
+              ? "Your campaign script"
+              : reviewingWeek
+                ? "Plan my week"
+                : "New campaign"
+          }
           description={
             reviewingScript
               ? "Review the plan, then generate your marketing video."
-              : "Fill in your business details to shape the video."
+              : reviewingWeek
+                ? "Approve the week’s posts, then create script drafts for the ones you want."
+                : "Fill in your business details to shape the video."
           }
           className="campaign-page-head"
         />
@@ -70,6 +80,18 @@ export default function ComposePage() {
             onAction={onStoryboardAction}
             onReload={onReloadScript}
             onBack={scriptCanEditSetup ? () => onCampaignEditStep(4) : undefined}
+          />
+        ) : reviewingWeek ? (
+          <StepWeeklyPlan
+            posts={weeklyPlan}
+            selectedDays={weeklySelectedDays}
+            onToggleDay={onWeeklyToggleDay}
+            onSelectAll={onWeeklySelectAll}
+            onCreateSelected={onCreateWeeklyDrafts}
+            onBack={onCampaignBack}
+            busy={starting}
+            status={startStatus}
+            statusClass={startStatusClass}
           />
         ) : (
           <ComposeForm
@@ -92,6 +114,7 @@ export default function ComposePage() {
             onPromotionSelect={onPromotionSelect}
             onDemoSelect={onDemoSelect}
             onSubmit={onCampaignSubmit}
+            onPlanWeek={onPlanWeek}
             onBack={onCampaignBack}
             onEditStep={onCampaignEditStep}
           />

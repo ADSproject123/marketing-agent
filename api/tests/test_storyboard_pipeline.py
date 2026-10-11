@@ -39,13 +39,16 @@ class RenderBriefTests(unittest.TestCase):
         storyboard["scenes"][1]["asset_id"] = "0"
         sources = [JobSource(kind="file", value="/private/tmp/coffee.png", title="Our coffee photo")]
         package = package_from_storyboard("Original business facts", storyboard, sources)
-        self.assertIn("SPOKEN NARRATION (verbatim): Need a quiet study spot?", package.source_text)
-        self.assertIn("SELECTED UPLOADED PHOTO: Our coffee photo", package.source_text)
+        self.assertIn('AUDIO VOICEOVER (verbatim): "Need a quiet study spot?"', package.source_text)
+        self.assertIn("FEATURED VISUAL ASSET: Our coffee photo", package.source_text)
+        self.assertIn("NOT A PODCAST", package.source_text)
+        self.assertIn("SHOT 1 | TIMECODE:", package.source_text)
         self.assertIn("approximately 16 seconds", package.steering_prompt)
         self.assertNotIn("ON-SCREEN HEADING", package.source_text)
-        self.assertIn("do not render on video", package.source_text)
-        self.assertIn("clean footage only", package.steering_prompt)
-        self.assertIn("no burned-in captions", package.steering_prompt)
+        self.assertIn("do NOT render this line", package.source_text)
+        self.assertIn("ZERO burned-in text", package.steering_prompt)
+        self.assertIn("Voiceover only", package.steering_prompt)
+        self.assertIn("Do not add intro greetings", package.steering_prompt)
         self.assertNotIn("SOCIAL COPY ONLY", package.source_text)
         self.assertEqual(package.caption, "SOCIAL COPY ONLY")
         self.assertEqual(package.brief, "Original business facts")
@@ -54,6 +57,8 @@ class RenderBriefTests(unittest.TestCase):
         package = package_from_storyboard("Original facts", effective_storyboard(plan("km")), [])
         self.assertTrue(package.steering_prompt.endswith("Make the video in Khmer language."))
         self.assertTrue(package.source_text.endswith("Make the video in Khmer language."))
+        self.assertIn("KHMER CAPTIONS", package.source_text)
+        self.assertIn("burn readable Khmer captions", package.steering_prompt)
 
 
 class ReviewedPipelineTests(unittest.IsolatedAsyncioTestCase):
@@ -146,7 +151,11 @@ class NotebookApprovedNarrationTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("សាកល្បងកាហ្វេរបស់យើង។", documents)
             self.assertNotIn("SOCIAL COPY ONLY", documents)
             instructions = client.artifacts.generate_video.call_args.kwargs["instructions"]
-            self.assertTrue(instructions.endswith("Make the video in Khmer language."))
+            self.assertTrue(
+                instructions.endswith("Make the video in Khmer language with visible Khmer captions throughout.")
+            )
+            self.assertIn("CRITICAL CAPTION RULES FOR KHMER", instructions)
+            self.assertNotIn("SOCIAL COPY ONLY", instructions)
 
 
 if __name__ == "__main__":

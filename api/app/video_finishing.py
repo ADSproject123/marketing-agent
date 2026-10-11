@@ -587,15 +587,16 @@ def apply_audio_polish(
 def _scene_overlay(scene: dict[str, Any], cue: CaptionCue, storyboard: dict[str, Any],
                    renderer: _TextRenderer, assets: list[Path], *, closing: bool,
                    opening: bool = False) -> Image.Image:
-    """Minimal overlays: captions + optional logo watermark; closing CTA card.
+    """Overlays: logo watermark, closing CTA card, and Khmer running captions.
 
-    Mid-scene on_screen_text banners are intentionally not burned — they duplicated
-    NotebookLM text and bottom captions. Business name appears only on open/close.
+    English stays caption-free. Khmer burns approved narration as a bottom caption
+    bar (NotebookLM alone is unreliable for subtitles). Mid-scene on_screen_text
+    banners and opening name pills stay omitted. Business name is end-card only.
     """
     canvas = Image.new("RGBA", (WIDTH, HEIGHT))
     draw = ImageDraw.Draw(canvas)
     business = _clean_text(storyboard.get("business_name"))
-    # No mid/opening business-name pill — it cluttered the frame. Name stays on the end card only.
+    language = storyboard.get("language", "en")
     _ = opening  # kept for call-site compatibility
 
     asset = None if closing else _selected_asset(scene, assets)
@@ -637,7 +638,7 @@ def _scene_overlay(scene: dict[str, Any], cue: CaptionCue, storyboard: dict[str,
                 f"Scan to message @{telegram}" if telegram and not storyboard.get("endcard_qr_asset_id")
                 else "Scan to order / pay"
             )
-            if storyboard.get("language") == "km":
+            if language == "km":
                 cta = (
                     f"ស្កេនដើម្បីផ្ញើសារ @{telegram}" if telegram and not storyboard.get("endcard_qr_asset_id")
                     else "ស្កេនដើម្បីបញ្ជាទិញ"
@@ -657,11 +658,16 @@ def _scene_overlay(scene: dict[str, Any], cue: CaptionCue, storyboard: dict[str,
             y += _paste_text(canvas, renderer, value, y, allowance, size=32,
                              color="#bce6e3" if value == contact else "white") + 20
 
-    caption = renderer.fit(cue.text, 588, 172, size=34)
-    bottom_y = HEIGHT - 132 - caption.height
-    draw.rounded_rectangle((48, bottom_y - 14, WIDTH - 48, HEIGHT - 110), radius=14,
-                           fill=(9, 14, 23, 210))
-    canvas.alpha_composite(caption, ((WIDTH - caption.width) // 2, bottom_y))
+    # Reliable running captions for Khmer only (synced to approved narration cues).
+    if language == "km" and _clean_text(cue.text):
+        caption = renderer.fit(cue.text, 588, 172, size=34)
+        bottom_y = HEIGHT - 132 - caption.height
+        draw.rounded_rectangle(
+            (48, bottom_y - 14, WIDTH - 48, HEIGHT - 110),
+            radius=14,
+            fill=(9, 14, 23, 210),
+        )
+        canvas.alpha_composite(caption, ((WIDTH - caption.width) // 2, bottom_y))
     return canvas
 
 
@@ -703,14 +709,25 @@ def _quality_report(metadata: dict[str, Any], storyboard: dict[str, Any], cues: 
     add("audio", "Audio", "pass" if audible else "fail",
         "Audio track present; loudness normalized for review. Listen to confirm the voice and pronunciation."
         if audible else "The clip has no audible audio track. Regenerate before publishing.")
-    add("subtitles", "Narration subtitles", "pass",
-        f"Burned in {len(cues)} cues from the approved narration, separately from the social caption.")
-    dense = any(len(_clusters(cue.text)) / max(.001, cue.end - cue.start) > 25 for cue in cues)
-    add("subtitle_readability", "Subtitle reading time", "warn" if dense else "pass",
-        "Some narration captions change quickly. Review readability or shorten the script."
-        if dense else "Narration captions have time to read at the planned playback speed.")
-    add("subtitle_alignment", "Speech and subtitle match", "warn",
-        "Captions use the approved script and planned timing, not an audio transcript. Check spoken words and timing in preview.")
+    language = _clean_text(storyboard.get("language")) or "en"
+    if language == "km":
+        dense = any(len(_clusters(cue.text)) / max(.001, cue.end - cue.start) > 25 for cue in cues)
+        add("subtitles", "Narration subtitles", "pass",
+            f"Burned in {len(cues)} Khmer caption cues from the approved narration "
+            "(separate from the social post caption).")
+        add("subtitle_readability", "Subtitle reading time", "warn" if dense else "pass",
+            "Some narration captions change quickly. Review readability or shorten the script."
+            if dense else "Narration captions have time to read at the planned playback speed.")
+        add("subtitle_alignment", "Speech and subtitle match", "warn",
+            "Captions use the approved Khmer script and planned timing. Check spoken words in preview.")
+    else:
+        add("subtitles", "Narration subtitles", "pass",
+            "English videos stay caption-free in finishing (NotebookLM also receives clean-footage rules). "
+            f"Approved narration cues ({len(cues)}) are kept as a side SRT for review only.")
+        add("subtitle_readability", "Subtitle reading time", "pass",
+            "No finishing caption bar is burned for English videos.")
+        add("subtitle_alignment", "Speech and subtitle match", "pass",
+            "English videos do not burn narration captions; listen to the voiceover in preview.")
     for key, label in (("business_name", "Branding"), ("offer", "Offer"), ("contact", "Contact and action")):
         text = _clean_text(storyboard.get(key))
         add(key, label, "pass" if text or key == "offer" else "warn",

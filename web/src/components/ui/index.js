@@ -6,7 +6,6 @@ export { default as EmptyState } from "./EmptyState";
 export { default as FormField } from "./FormField";
 export { default as Input } from "./Input";
 export { default as PageHeader } from "./PageHeader";
-export { default as Select } from "./Select";
 export { default as Spinner } from "./Spinner";
 export { default as StatCard } from "./StatCard";
 export { default as StatusBadge } from "./StatusBadge";

@@ -12,8 +12,13 @@ from unittest.mock import Mock, patch
 import httpx
 
 from app import webapp
+from app.dependencies import require_user
 from app.jobs.store import JobSource, JobStatus, JobStore
-from app.storyboards import Storyboard, draft_storyboard, effective_storyboard, revise_storyboard, validate_storyboard
+from app.storyboards import (
+    Storyboard, _align_total_duration, _target_duration_seconds,
+    assert_scene_speech_cadence, draft_storyboard, effective_storyboard,
+    revise_storyboard, validate_storyboard,
+)
 
 BRIEF = "BUSINESS CAMPAIGN BRIEF\nName: My cafe\nLocation: Phnom Penh\nMain customer benefit: Fresh local coffee\nCall to action: Visit in person\nNo special offer supplied. Focus on the stated customer benefit; do not invent a promotion."
 
@@ -44,6 +49,36 @@ class StoryboardModelTests(unittest.TestCase):
         self.assertEqual(effective["scenes"][0]["narration"], value["hooks"][1]["text"])
         self.assertEqual(effective["scenes"][0]["on_screen_text"], value["hooks"][1]["text"])
         self.assertEqual(value["scenes"][0]["narration"], "Ready for fresh coffee?")
+        self.assertEqual(
+            [hook["archetype"] for hook in effective["hooks"]],
+            ["pain_agitation", "curiosity_intrigue", "value_offer"],
+        )
+
+    def test_speech_cadence_rejects_overcrowded_narration(self):
+        scene = {
+            "id": "s1", "duration_seconds": 3,
+            "narration": "This line has way too many words for three seconds of natural speech pacing today.",
+        }
+        with self.assertRaisesRegex(ValueError, "too long for a 3"):
+            assert_scene_speech_cadence(scene, "en")
+        value = plan()
+        value["scenes"][0]["narration"] = scene["narration"]
+        value["hooks"][0]["text"] = scene["narration"]
+        with self.assertRaisesRegex(ValueError, "too long"):
+            validate_storyboard(value, language="en", sources=[])
+
+    def test_target_video_length_is_parsed_and_aligned(self):
+        notes = JobSource(kind="text", value="Target video length: 15 seconds", title="Extra notes")
+        self.assertEqual(_target_duration_seconds(BRIEF, [notes]), 15)
+        self.assertIsNone(_target_duration_seconds(BRIEF, []))
+        aligned = _align_total_duration(
+            {"scenes": [{"duration_seconds": 3}, {"duration_seconds": 12}, {"duration_seconds": 15}]},
+            15,
+        )
+        total = sum(scene["duration_seconds"] for scene in aligned["scenes"])
+        self.assertAlmostEqual(total, 15, delta=1.5)
+        self.assertGreaterEqual(aligned["scenes"][0]["duration_seconds"], 2)
+        self.assertLessEqual(aligned["scenes"][0]["duration_seconds"], 5)
 
     def test_schema_rejects_bad_timeline_hook_ids_and_foreign_assets(self):
         for mutate in (
@@ -108,7 +143,7 @@ class StoryboardModelTests(unittest.TestCase):
         self.assertEqual(result["business_name"], "ហាងកាហ្វេ")
         self.assertEqual(generate.call_args.kwargs["api_key"], "second")
         self.assertTrue(generate.call_args.kwargs["user_prompt"].endswith("Make the video in Khmer language."))
-        self.assertIn("អ្នកជាអ្នកសរសេរ", generate.call_args.kwargs["system_instruction"])
+        self.assertIn("អ្នកជាអ្នកដឹកនាំច្នៃប្រឌិត", generate.call_args.kwargs["system_instruction"])
 
     def test_hook_and_ending_revisions_cannot_change_unrelated_fields(self):
         original = plan()
@@ -184,8 +219,8 @@ class StoryboardApiTests(unittest.IsolatedAsyncioTestCase):
         self.store = JobStore(self.root / "jobs.db")
         self.settings = SimpleNamespace(allowed_telegram_user_id=1, gemini_api_keys=("key",), gemini_model="model", uploads_dir=self.root / "uploads", videos_dir=self.root / "videos")
         self.user = {"id": "owner"}
-        webapp.app.dependency_overrides[webapp._require_user] = lambda: self.user
-        self.addCleanup(webapp.app.dependency_overrides.pop, webapp._require_user, None)
+        webapp.app.dependency_overrides[require_user] = lambda: self.user
+        self.addCleanup(webapp.app.dependency_overrides.pop, require_user, None)
 
         def create_and_start(**fields):
             start = fields.pop("start", True)
@@ -193,10 +228,13 @@ class StoryboardApiTests(unittest.IsolatedAsyncioTestCase):
             return self.store.create_job(chat_id=1, user_id=1, status=JobStatus.QUEUED, **fields)
 
         self.runtime = SimpleNamespace(settings=self.settings, store=self.store, _running=set(), create_and_start=Mock(side_effect=create_and_start), start_job=Mock())
-        for name, value in (("get_runtime", self.runtime), ("resolve_settings_for_account", self.settings)):
-            patcher = patch(f"app.webapp.{name}", return_value=value)
-            patcher.start()
-            self.addCleanup(patcher.stop)
+        for target, value in (
+                ("app.runtime.get_runtime", self.runtime),
+                ("app.routers.jobs.resolve_settings_for_account", self.settings),
+            ):
+                patcher = patch(target, return_value=value)
+                patcher.start()
+                self.addCleanup(patcher.stop)
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=webapp.app), base_url="http://test")
         self.addAsyncCleanup(self.client.aclose)
 
@@ -205,7 +243,7 @@ class StoryboardApiTests(unittest.IsolatedAsyncioTestCase):
         return self.store.update(job.id, storyboard=plan())
 
     async def test_create_draft_then_explicit_render_starts_once(self):
-        with patch("app.webapp.draft_storyboard", return_value=plan()):
+        with patch("app.storyboards.draft_storyboard", return_value=plan()):
             response = await self.client.post("/api/campaign-drafts", json={"brief": BRIEF, "language": "en"})
         self.assertEqual(response.status_code, 200, response.text)
         job = response.json()["job"]
@@ -234,7 +272,7 @@ class StoryboardApiTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_revision_failure_does_not_replace_saved_plan(self):
         job = self.create_review()
-        with patch("app.webapp.revise_storyboard", side_effect=ValueError("Please retry")):
+        with patch("app.storyboards.revise_storyboard", side_effect=ValueError("Please retry")):
             response = await self.client.post(f"/api/jobs/{job.id}/revise", json={"storyboard": plan(), "expected_updated_at": job.updated_at, "action": "shorter"})
         self.assertEqual(response.status_code, 502)
         self.assertEqual(self.store.get(job.id).storyboard, plan())
@@ -252,7 +290,7 @@ class StoryboardApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(clone.id, job.id)
         self.assertEqual(clone.status, JobStatus.SCRIPT_REVIEW)
         self.assertEqual(clone.brief, job.brief)
-        self.assertEqual(clone.storyboard, job.storyboard)
+        self.assertEqual(clone.storyboard, effective_storyboard(job.storyboard))
         self.assertTrue(Path(clone.sources[0].value).is_file())
         self.assertNotEqual(clone.sources[0].value, str(image))
         self.assertEqual(self.store.get(job.id).telegram_preview_message_id, 42)
@@ -291,13 +329,13 @@ class StoryboardApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.post(f"/api/jobs/{job.id}/render", json=edit)).status_code, 200)
 
     async def test_failed_initial_draft_retries_saved_setup_without_rendering(self):
-        with patch("app.webapp.draft_storyboard", side_effect=ValueError("Temporary error")):
+        with patch("app.storyboards.draft_storyboard", side_effect=ValueError("Temporary error")):
             response = await self.client.post("/api/campaign-drafts", json={"brief": BRIEF, "language": "en"})
         self.assertEqual(response.status_code, 502)
         failed = self.store.list_recent_for_account("owner")[0]
         self.assertEqual(failed.status, JobStatus.FAILED)
         self.assertEqual(failed.brief, BRIEF)
-        with patch("app.webapp.draft_storyboard", return_value=plan()):
+        with patch("app.storyboards.draft_storyboard", return_value=plan()):
             retried = await self.client.post(f"/api/jobs/{failed.id}/draft", json={"expected_updated_at": failed.updated_at})
         self.assertEqual(retried.status_code, 200, retried.text)
         self.assertEqual(retried.json()["job"]["status"], "script_review")

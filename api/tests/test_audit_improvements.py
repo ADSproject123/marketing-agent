@@ -14,6 +14,7 @@ import httpx
 import pytest
 
 from app import config, webapp
+from app.dependencies import require_user
 from app.jobs.store import Job, JobSource, JobStatus, JobStore
 from app.runtime import Runtime, reconcile_interrupted_jobs
 
@@ -100,10 +101,10 @@ class WebApiAuditEndpointTests(unittest.IsolatedAsyncioTestCase):
             _tasks={},
         )
         self.account_id = "test-account"
-        webapp.app.dependency_overrides[webapp._require_user] = lambda: {"id": self.account_id}
-        self.addCleanup(webapp.app.dependency_overrides.pop, webapp._require_user)
+        webapp.app.dependency_overrides[require_user] = lambda: {"id": self.account_id}
+        self.addCleanup(webapp.app.dependency_overrides.pop, require_user)
 
-        runtime_patch = patch("app.webapp.get_runtime", return_value=self.runtime)
+        runtime_patch = patch("app.runtime.get_runtime", return_value=self.runtime)
         store_patch = patch("app.webapp._store", return_value=self.store)
         runtime_patch.start()
         store_patch.start()

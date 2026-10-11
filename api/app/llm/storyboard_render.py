@@ -15,51 +15,82 @@ def package_from_storyboard(
     language = storyboard["language"]
     files = [source for source in sources if source.kind == "file"]
     lines = [
-        "APPROVED VIDEO SCRIPT — follow the scene order and exact narration.",
-        "Only supplied business facts are allowed. Do not invent prices, offers, reviews or addresses.",
-        f"Business: {storyboard.get('business_name', '')}",
-        f"Offer: {storyboard.get('offer', '') or 'No offer supplied; do not invent one.'}",
-        f"Contact / action destination: {storyboard.get('contact', '')}",
+        "### PRODUCTION DIRECTIVE: VIRAL SHORT-FORM COMMERCIAL ADVERTISEMENT",
+        "### STRICT ENFORCEMENT: THIS IS NOT A PODCAST. NO HOST INTRODUCTIONS. NO CHAT.",
+        "[DIRECTIVE: COMMERCIAL ADVERTISEMENT — NOT A PODCAST]",
+        '- DO NOT say "Welcome to", "Hello listeners", "Welcome back", or "Today we\'re looking at".',
+        "- DO NOT speak as two hosts chatting or debating.",
+        "- Speak as a SINGLE confident commercial brand voiceover.",
+        "- Begin speaking the OPENING HOOK on EXACT SECOND 0.0.",
+        "- Pacing: Fast-paced commercial montage (TikTok/Reels format).",
+        f"Brand / Business: {storyboard.get('business_name', '')}",
+        f"Verified Offer: {storyboard.get('offer', '') or 'Promote stated benefit only; do not invent offers.'}",
+        f"Call to Action: {storyboard.get('contact', '')}",
+        f"Language Target: {language}",
         f"Title: {storyboard['title']}",
-        f"Language: {language}",
         "",
+        "### PRODUCTION TIMELINE & SHOT LIST:",
     ]
     elapsed = 0.0
     for index, scene in enumerate(storyboard["scenes"], start=1):
         duration = float(scene["duration_seconds"])
         end = elapsed + duration
         asset = scene.get("asset_id")
-        asset_name = "No photo selected; follow the visual direction."
         if asset is not None:
             source = files[int(asset)]
-            asset_name = source.title or Path(source.value).name
+            asset_label = source.title or Path(source.value).name
+        else:
+            asset_label = "Cinematic AI B-Roll (no uploaded photo selected)"
         lines.extend([
-            f"SCENE {index} ({elapsed:g}–{end:g}s):",
-            f"SPOKEN NARRATION (verbatim): {scene['narration']}",
-            # on_screen_text is for our finishing/UI pass only — never burn it into NLM footage.
-            "EDITOR NOTE (do not render on video): short headline will be added later in edit.",
-            f"VISUAL DIRECTION: {scene['visual_direction']}",
-            f"SELECTED UPLOADED PHOTO: {asset_name}",
+            f"==================================================",
+            f"SHOT {index} | TIMECODE: {elapsed:g}s – {end:g}s | DURATION: {duration:g}s",
+            f'AUDIO VOICEOVER (verbatim): "{scene["narration"]}"',
+            # Never ask NLM to burn headlines — English must stay text-free on screen.
+            "EDITOR NOTE: spoken VO only — do NOT render this line, any headline, caption, or text box on video.",
+            f"CAMERA DIRECTION: {scene['visual_direction']}",
+            f"FEATURED VISUAL ASSET: {asset_label}",
+            "==================================================",
             "",
         ])
         elapsed = end
     lines.extend([
         "The social post caption is separate from this narration script.",
         "Do not narrate the social caption or add an introduction, conclusion or extra scenes.",
-        "Produce clean visual footage only. Captions, logos, headings, and end cards are added later.",
-        _video_language_instruction(language),
     ])
+    if language == "km":
+        lines.extend([
+            "KHMER CAPTIONS: Burn large high-contrast Khmer captions for every spoken line.",
+            "Do NOT burn English captions, business-name pills, dark title chips, or logo text bars.",
+            "Business name branding is added later on the end card — never as an opening name pill.",
+        ])
+        caption_steering = (
+            "CRITICAL for Khmer: burn readable Khmer captions throughout. "
+            "Do NOT burn English text, business-name pills, dark rounded title chips, "
+            "or branded name labels. No opening name pill. "
+        )
+    else:
+        lines.extend([
+            "Produce clean visual footage only — ZERO on-screen text for English.",
+            "CRITICAL: Do NOT burn captions, subtitles, titles, business-name pills, dark rounded "
+            "chips, brown/black text bars, lower-thirds, or any readable words on the video frames.",
+            "Spoken voiceover carries the message; visuals stay text-free. End-card branding is added later.",
+        ])
+        caption_steering = (
+            "CRITICAL: English = clean footage with ZERO burned-in text. "
+            "No captions, subtitles, titles, name pills, dark chips, or text bars of any kind. "
+            "Voiceover only — do not put spoken words on screen. "
+        )
+    lines.append(_video_language_instruction(language))
     steering = (
-        f"Create a short vertical 9:16 marketing video lasting approximately {elapsed:g} seconds. "
-        "Use the APPROVED VIDEO SCRIPT source as the production plan. "
-        "Follow its scene order, exact spoken narration, selected photos and visual directions. "
-        "The first scene is the selected hook; open immediately without an intro. "
-        "Keep speech clear and music below the voice. "
+        f"High-energy vertical 9:16 mobile video advertisement lasting approximately {elapsed:g} seconds. "
+        "Style: High-retention TikTok/Reels commercial montage. "
+        "Use the PRODUCTION TIMELINE & SHOT LIST as the production plan. "
+        "CRITICAL: Start immediately on second 0 with Shot 1 voiceover. "
+        "Do not add intro greetings, podcast host chatter, or welcome lines. "
+        "Follow scene order and exact spoken narration. "
         "Use only the supplied business facts. Do not invent offers, prices, claims or contact details. "
         "Keep the final call to action exactly as approved. "
-        "CRITICAL: clean footage only — no burned-in captions, titles, logos, lower-thirds, "
-        "text boxes, on-screen headings, or subtitle bars. Narration captions and branding "
-        "are added in a separate editing pass. "
+        + caption_steering
         + _video_language_instruction(language)
     )
     return CaptionPackage(

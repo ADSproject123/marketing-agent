@@ -10,7 +10,9 @@ from cryptography.fernet import Fernet, InvalidToken
 
 
 def _fernet() -> Fernet:
-    secret = os.getenv("AUTH_SECRET", "").strip() or "marketing-agent-dev-secret-change-me"
+    from app.config import DEV_AUTH_SECRET
+
+    secret = os.getenv("AUTH_SECRET", "").strip() or DEV_AUTH_SECRET
     digest = hashlib.sha256(secret.encode("utf-8")).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
 

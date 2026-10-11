@@ -33,7 +33,9 @@ _pending_pages: dict[str, dict[str, Any]] = {}
 
 
 def _auth_secret() -> str:
-    return os.getenv("AUTH_SECRET", "").strip() or "marketing-agent-dev-secret-change-me"
+    from app.config import DEV_AUTH_SECRET
+
+    return os.getenv("AUTH_SECRET", "").strip() or DEV_AUTH_SECRET
 
 
 def facebook_oauth_configured() -> bool:

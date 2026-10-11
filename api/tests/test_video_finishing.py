@@ -82,8 +82,8 @@ class NarrationCaptionTests(unittest.TestCase):
         self.assertEqual(checks["aspect_ratio"]["status"], "pass")
         self.assertEqual(checks["duration"]["status"], "warn")
         self.assertEqual(checks["audio"]["status"], "fail")
-        self.assertEqual(checks["subtitle_alignment"]["status"], "warn")
-        self.assertIn("not an audio transcript", checks["subtitle_alignment"]["detail"])
+        self.assertEqual(checks["subtitle_alignment"]["status"], "pass")
+        self.assertIn("do not burn narration captions", checks["subtitle_alignment"]["detail"])
 
     def test_missing_processing_dependency_never_returns_raw_clip(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -169,11 +169,11 @@ class SyntheticVideoFinishingTests(unittest.TestCase):
         self.assertEqual(checks["contact"]["status"], "pass")
         contents = Path(report["subtitles_path"]).read_text()
         self.assertNotIn("SOCIAL CAPTION", contents)
+        self.assertIn("caption-free", checks["subtitles"]["detail"])
         frame = self._frame(finished, 3.5)
-        # White lettering was burned into the caption band, while the closing
-        # card contains its cyan outline. This checks pixels in the actual MP4.
-        caption_pixels = list(frame.crop((42, 910, 678, 1160)).get_flattened_data())
-        self.assertGreater(sum(min(pixel) > 175 for pixel in caption_pixels), 250)
+        # English finishing no longer burns a bottom caption bar — only the closing card.
+        caption_band = list(frame.crop((42, 910, 678, 1160)).get_flattened_data())
+        self.assertLess(sum(min(pixel) > 175 for pixel in caption_band), 250)
         closing_pixels = list(frame.crop((40, 340, 680, 910)).get_flattened_data())
         self.assertGreater(sum(pixel[1] > 140 and pixel[2] > 140 and pixel[0] < 150
                                for pixel in closing_pixels), 100)
@@ -189,11 +189,13 @@ class SyntheticVideoFinishingTests(unittest.TestCase):
         finished, report = finish_video(original, plan, [JobSource(kind="file", value=str(asset))])
         self.assertEqual(report["metadata"]["text_renderer"], "pango")
         self.assertIn("កាហ្វេ", Path(report["subtitles_path"]).read_text())
+        checks = {check["id"]: check for check in report["checks"]}
+        self.assertIn("Burned in", checks["subtitles"]["detail"])
         frame = self._frame(finished, .5)
         pixel = frame.getpixel((360, 280))
         self.assertGreater(pixel[0], 210)
         self.assertLess(pixel[1], 45)
-        # Khmer caption glyphs occupy the burned-in caption region.
+        # Khmer finishing burns a bottom narration caption bar.
         pixels = list(frame.crop((42, 910, 678, 1160)).get_flattened_data())
         self.assertGreater(sum(min(pixel) > 175 for pixel in pixels), 200)
 

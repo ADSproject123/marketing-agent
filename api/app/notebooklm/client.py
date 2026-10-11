@@ -96,19 +96,16 @@ def _video_style(name: str) -> VideoStyle:
 
 def _khmer_caption_instructions(*, title: str, caption: str) -> str:
     """NotebookLM has no native `km` video language — force burned-in Khmer captions."""
-    title = (title or "").strip()
-    caption = (caption or "").strip()
+    _ = (title, caption)  # social title/caption must not become name pills or English bars
     lines = [
         "CRITICAL CAPTION RULES FOR KHMER:",
         "- Show large burned-in Khmer captions / subtitles on screen for the entire video.",
-        "- Every spoken line must also appear as Khmer on-screen text (subtitles / titles in Khmer script).",
+        "- Every spoken line must also appear as Khmer on-screen text (subtitles in Khmer script).",
         "- Do not leave the video without readable Khmer text overlays.",
         "- Prefer short phrases, high contrast, TikTok-style captions.",
+        "- Do NOT burn English captions, business-name pills, or dark rounded title chips.",
+        "- Do NOT use the social post caption or English title as an on-screen name pill.",
     ]
-    if title:
-        lines.append(f"- Title card / recurring on-screen title: {title}")
-    if caption:
-        lines.append(f"- Use this social caption as the main on-screen caption script:\n{caption}")
     lines.append(
         "Make the video in Khmer language with visible Khmer captions throughout."
     )
@@ -330,25 +327,32 @@ async def generate_video_overview(
             )
             instructions = f"{instructions}\n{brand_line}".strip()
         if language == "km":
-            caption_instruction = (
-                "អានស្គ្រីបដែលបានអនុម័តតាមលំដាប់ឈុត។ "
-                "កុំអានសារផ្សព្វផ្សាយសម្រាប់បង្ហោះ។ "
-                "អក្សររត់នឹងត្រូវបានបន្ថែមនៅពេលកែសម្រួលវីដេអូ។\n\n"
-                "Make the video in Khmer language."
-                if narration_script else _khmer_caption_instructions(title=title, caption=caption)
-            )
+            # Khmer has no native NLM language code — burn Khmer captions in-footage.
+            # Finishing no longer burns a second caption bar.
+            caption_instruction = _khmer_caption_instructions(title=title, caption=caption)
+            if narration_script:
+                caption_instruction = (
+                    "Speak the approved scene narration in order. "
+                    "Do not read the social post caption aloud.\n\n"
+                    + caption_instruction
+                )
             instructions = (
-                f"{instructions}\nប្រើភាសាខ្មែរសម្រាប់ការនិយាយ សន្ទនា ចំណងជើង អក្សររត់ "
-                "និងអត្ថបទទាំងអស់ក្នុងវីដេអូ។ ប្រើអក្សរខ្មែរ "
-                "ហើយរក្សាឈ្មោះម៉ាក និងតំណភ្ជាប់ដើមតាមការចាំបាច់។\n\n"
+                f"{instructions}\nប្រើភាសាខ្មែរសម្រាប់ការនិយាយ សន្ទនា "
+                "និងអក្សររត់ខ្មែរនៅក្នុងវីដេអូ។ ប្រើអក្សរខ្មែរ "
+                "ហើយរក្សាឈ្មោះម៉ាក និងតំណភ្ជាប់ដើមតាមការចាំបាច់។\n"
+                "CRITICAL: Do NOT burn English captions, business-name pills, or dark title chips. "
+                "Khmer captions only — no opening brand-name pill.\n\n"
                 f"{caption_instruction}"
             ).strip()
         else:
             instructions = (
                 f"{instructions}\nOutput language: {language_name} ({language}). "
-                f"Use {language_name} for all narration, dialogue, headings, subtitles, "
-                "and on-screen text throughout the video, regardless of the source language. "
-                "Use native script. Preserve proper brand names and URLs where needed."
+                f"Use {language_name} for spoken narration / voiceover only. "
+                "CRITICAL: produce CLEAN footage with ZERO on-screen text. "
+                "Do NOT burn captions, subtitles, titles, headings, lower-thirds, text boxes, "
+                "brown/black caption bars, or business-name pills "
+                "(no dark rounded chips/labels with the brand name or spoken phrases). "
+                "The voiceover speaks the script; the picture stays text-free."
             ).strip()
 
         if progress_callback:

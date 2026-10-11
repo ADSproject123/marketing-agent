@@ -8,6 +8,7 @@ import logging
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler
 
 from app.telegram_bot.handlers import BotHandlers
+from app.telegram_bot.http import build_application
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class TelegramBotHub:
         async with self._lock:
             if token in self._apps:
                 return
-            application = Application.builder().token(token).build()
+            application = build_application(token)
             self._wire(application)
             await application.initialize()
             await application.start()

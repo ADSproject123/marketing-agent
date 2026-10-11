@@ -8,6 +8,7 @@ from unittest.mock import patch
 import httpx
 
 from app import webapp
+from app.dependencies import require_user
 from app.jobs.store import JobStore
 from app.promotions.store import PromotionStore
 
@@ -51,12 +52,12 @@ class PromotionApiTests(unittest.IsolatedAsyncioTestCase):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
         self.path = Path(temp.name) / "jobs.db"
-        store_patch = patch("app.webapp.DB_PATH", self.path)
+        store_patch = patch("app.dependencies.DB_PATH", self.path)
         store_patch.start()
         self.addCleanup(store_patch.stop)
         self.user = {"id": "alice"}
-        webapp.app.dependency_overrides[webapp._require_user] = lambda: self.user
-        self.addCleanup(webapp.app.dependency_overrides.pop, webapp._require_user, None)
+        webapp.app.dependency_overrides[require_user] = lambda: self.user
+        self.addCleanup(webapp.app.dependency_overrides.pop, require_user, None)
         self.client = httpx.AsyncClient(
             transport=httpx.ASGITransport(app=webapp.app), base_url="http://test",
         )
@@ -111,7 +112,7 @@ class PromotionApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(PromotionStore(self.path).list_for_account("alice"), [])
 
     async def test_routes_require_sign_in(self):
-        webapp.app.dependency_overrides.pop(webapp._require_user)
+        webapp.app.dependency_overrides.pop(require_user, None)
         get_response = await self.client.get("/api/promotions")
         post_response = await self.client.post("/api/promotions", json={
             "kind": "other", "name": "Community", "description": "Local event",

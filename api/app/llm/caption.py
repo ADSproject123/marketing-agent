@@ -28,11 +28,20 @@ GUIDED_CAMPAIGN_HEADINGS = (
 GUIDED_TEMPERATURE = 0.55
 AUTO_TEMPERATURE = 0.9
 
+# Promotional claim detectors. Avoid bare "off"/"free" — those false-positive on
+# natural phrases like "off the busy street" or "feel free to message".
 _CLAIM_PATTERNS = (
     re.compile(r"\d+\s*%"),
-    re.compile(r"\b(?:free|discount|sale|off)\b", re.I),
-    re.compile(r"\b(?:buy\s+one|bogo|limited[- ]time)\b", re.I),
     re.compile(r"\$\s*\d+", re.I),
+    re.compile(r"\b(?:discount|sale)\b", re.I),
+    re.compile(r"\b(?:buy\s+one|bogo|limited[- ]time)\b", re.I),
+    re.compile(r"\b\d+\s*%\s*off\b", re.I),
+    re.compile(r"\boff\s+(?:today|now|this|your|our|all|every)\b", re.I),
+    re.compile(
+        r"(?<!feel )(?<!set )\bfree\s+(?:coffee|drink|pastry|gift|trial|shipping|"
+        r"entry|wifi|wi-?fi|delivery|dessert|cookie|muffin|sample|refill)\b",
+        re.I,
+    ),
 )
 
 GUIDED_SYSTEM_PROMPT = """You are a marketing creative director for short-form vertical social video (TikTok / Reels).
@@ -517,3 +526,156 @@ def draft_caption_package(
 
     logger.error("All Gemini keys failed; last error: %s", last_error)
     return _fallback_package(hint, default_format, language)
+
+
+WEEKLY_PLAN_ROLES = (
+    ("monday", "awareness"),
+    ("wednesday", "product"),
+    ("friday", "offer"),
+)
+
+WEEKLY_PLAN_SYSTEM = """You are a senior social video director for short-form vertical TikTok/Reels.
+
+Create a 3-part weekly campaign series for one business. Posts must be distinct but on-brand.
+Use ONLY facts from the supplied brief and notes. Never invent prices, discounts, deadlines,
+addresses, testimonials, or product claims that were not provided.
+
+Return JSON only with this shape:
+{
+  "posts": [
+    {
+      "day": "monday",
+      "role": "awareness",
+      "title": "short title",
+      "angle": "one-sentence creative angle",
+      "cta": "viewer action",
+      "brief_delta": "extra brief lines for this post only",
+      "notes_delta": "extra creative direction for this post only"
+    },
+    { "day": "wednesday", "role": "product", ... },
+    { "day": "friday", "role": "offer", ... }
+  ]
+}
+
+Rules:
+- Exactly 3 posts in that day/role order.
+- Each video intent is under ~45 seconds, vertical 9:16.
+- Keep JSON keys in English. Write title, angle, cta, brief_delta, notes_delta in the required language.
+"""
+
+
+def _normalize_weekly_posts(raw: object, *, language: str) -> list[dict]:
+    if isinstance(raw, dict):
+        items = raw.get("posts")
+    else:
+        items = raw
+    if not isinstance(items, list) or len(items) != 3:
+        raise ValueError("Weekly plan must include exactly 3 posts.")
+
+    posts: list[dict] = []
+    for expected, item in zip(WEEKLY_PLAN_ROLES, items, strict=True):
+        if not isinstance(item, dict):
+            raise ValueError("Weekly plan post was incomplete.")
+        day, role = expected
+        title = str(item.get("title") or "").strip()
+        angle = str(item.get("angle") or "").strip()
+        cta = str(item.get("cta") or "").strip()
+        brief_delta = str(item.get("brief_delta") or "").strip()
+        notes_delta = str(item.get("notes_delta") or "").strip()
+        if not all((title, angle, cta, brief_delta, notes_delta)):
+            raise ValueError("Weekly plan post was incomplete.")
+        posts.append(
+            {
+                "day": day,
+                "role": role,
+                "title": title[:120],
+                "angle": angle[:500],
+                "cta": cta[:200],
+                "brief_delta": brief_delta[:1500],
+                "notes_delta": notes_delta[:1500],
+            }
+        )
+    if language == "km":
+        for post in posts:
+            blob = " ".join(
+                post[key]
+                for key in ("title", "angle", "cta", "brief_delta", "notes_delta")
+            )
+            if not re.search(r"[\u1780-\u17ff]", blob):
+                raise ValueError("Weekly plan must be written in Khmer.")
+    return posts
+
+
+def draft_weekly_plan(
+    settings: Settings,
+    brief: str = "",
+    notes: str = "",
+    *,
+    language: str | None = None,
+    urls: list[str] | None = None,
+) -> list[dict]:
+    """Draft a Mon/Wed/Fri 3-post series plan via Gemini (no jobs created)."""
+    global _active_key_index
+
+    language = (language or settings.video_language or "en").strip()
+    if language not in {"en", "km"}:
+        language = "en"
+    language_name = {"en": "English", "km": "Khmer (" + "ខ្មែរ" + ")"}.get(
+        language, language
+    )
+    keys = settings.gemini_api_keys
+    if not keys:
+        raise ValueError("Connect a Gemini API key in Settings before planning your week.")
+
+    url_lines = "\n".join(f"- {url}" for url in (urls or []) if url) or "(none)"
+    user_prompt = (
+        f"Required output language: {language_name} ({language}).\n"
+        "Write title, angle, cta, brief_delta, and notes_delta in that language.\n"
+        "Keep JSON keys in English.\n\n"
+        f"Business brief:\n{(brief or '').strip() or '(empty)'}\n\n"
+        f"Creative notes:\n{(notes or '').strip() or '(none)'}\n\n"
+        f"Source URLs:\n{url_lines}\n"
+    )
+    if language == "km":
+        user_prompt += "\nMake the plan in Khmer language."
+
+    last_error: BaseException | None = None
+    with _key_lock:
+        start = _active_key_index % len(keys)
+
+    for offset in range(len(keys)):
+        idx = (start + offset) % len(keys)
+        api_key = keys[idx]
+        try:
+            content = _generate_with_key(
+                api_key=api_key,
+                model=settings.gemini_model,
+                user_prompt=user_prompt,
+                system_instruction=WEEKLY_PLAN_SYSTEM,
+                temperature=GUIDED_TEMPERATURE,
+            )
+            data = _parse_json(content)
+            posts = _normalize_weekly_posts(data, language=language)
+            with _key_lock:
+                _active_key_index = idx
+            return posts
+        except Exception as exc:
+            last_error = exc
+            if isinstance(exc, ValueError) and not _is_rotatable_error(exc):
+                raise
+            if _is_rotatable_error(exc) and offset < len(keys) - 1:
+                logger.warning(
+                    "Gemini key %s failed for weekly plan (%s); trying next key",
+                    _mask_key(api_key),
+                    exc,
+                )
+                continue
+            logger.exception(
+                "Gemini weekly plan failed with key %s",
+                _mask_key(api_key),
+            )
+            break
+
+    raise ValueError(
+        f"Could not generate a weekly plan. {last_error or 'Please try again.'}"
+    )

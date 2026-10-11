@@ -7,9 +7,9 @@ export const CAMPAIGN_FIELD_LIMITS = Object.freeze({
   location: 300,
   website: 500,
   audience: 500,
-  offer: 400,
+  offer: 700,
   offerTiming: 200,
-  destination: 400,
+  destination: 1000,
   telegramUsername: 32,
   extraNotes: 500,
   urls: 5000,
@@ -26,7 +26,7 @@ const DEFAULT_DRAFT = {
   promotionId: "", kind: "shop", name: "", description: "", benefit: "",
   location: "", website: "", goal: "sales", audience: "", offer: "",
   offerTiming: "", cta: "visit", destination: "", telegramUsername: "",
-  style: "warm", extraNotes: "", urls: "", templateId: "", language: "en",
+  style: "warm", videoLength: "30", extraNotes: "", urls: "", templateId: "", language: "en",
   assets: [], khqrFile: null,
 };
 
@@ -35,6 +35,7 @@ const CHOICES = {
   goal: ["sales", "awareness", "launch"],
   cta: ["visit", "message", "buy", "learn"],
   style: ["warm", "bold", "clean"],
+  videoLength: ["15", "30", "45"],
   language: ["en", "km"],
 };
 
@@ -52,10 +53,11 @@ const COPY = {
     goal: { sales: "Drive sales", awareness: "Build awareness", launch: "Introduce something new" },
     cta: { visit: "Visit in person", message: "Send a message", buy: "Buy or order", learn: "Learn more" },
     style: { warm: "Warm and friendly", bold: "Bold and energetic", clean: "Clean and professional" },
+    videoLength: { "15": "about 15 seconds", "30": "about 30 seconds", "45": "about 45 seconds" },
     noOffer: "No special offer supplied. Focus on the stated customer benefit; do not invent a promotion.",
     rules: "Use only the supplied business facts and selected call to action. Do not invent prices, discounts, deadlines, addresses, testimonials, or product claims. Creative suggestions must never override these facts.",
-    styleLabel: "Video style", notesLabel: "Additional creative direction", templateLabel: "Creative inspiration",
-    video: "Create a short vertical 9:16 marketing video, under 60 seconds, with a clear hook in the first 3 seconds and one clear call to action.",
+    styleLabel: "Video style", videoLengthLabel: "Target video length", notesLabel: "Additional creative direction", templateLabel: "Creative inspiration",
+    video: "Create a short vertical 9:16 marketing video with a clear hook in the first 3 seconds and one clear call to action.",
     language: "Generate the caption, script, narration, and on-screen text in English.",
   },
   km: {
@@ -71,10 +73,11 @@ const COPY = {
     goal: { sales: "ជំរុញការលក់", awareness: "បង្កើនការស្គាល់", launch: "ណែនាំអ្វីដែលថ្មី" },
     cta: { visit: "អញ្ជើញមកផ្ទាល់", message: "ផ្ញើសារ", buy: "ទិញ ឬបញ្ជាទិញ", learn: "ស្វែងយល់បន្ថែម" },
     style: { warm: "កក់ក្ដៅ និងរួសរាយ", bold: "ជឿជាក់ និងមានថាមពល", clean: "សាមញ្ញ និងមានវិជ្ជាជីវៈ" },
+    videoLength: { "15": "about 15 seconds", "30": "about 30 seconds", "45": "about 45 seconds" },
     noOffer: "មិនមានការផ្ដល់ជូនពិសេសទេ។ ផ្ដោតលើអត្ថប្រយោជន៍ដែលបានផ្ដល់ និងកុំបង្កើតកម្មវិធីផ្សព្វផ្សាយថ្មី។",
     rules: "ប្រើតែព័ត៌មានអាជីវកម្ម និងការអំពាវនាវដែលអ្នកប្រើប្រាស់បានផ្ដល់។ កុំបង្កើតតម្លៃ ការបញ្ចុះតម្លៃ កាលកំណត់ អាសយដ្ឋាន សក្ខីកម្មអតិថិជន ឬការអះអាងអំពីផលិតផល។ គំនិតច្នៃប្រឌិតត្រូវគោរពព័ត៌មានទាំងនេះ។",
-    styleLabel: "រចនាប័ទ្មវីដេអូ", notesLabel: "ការណែនាំច្នៃប្រឌិតបន្ថែម", templateLabel: "គំនិតច្នៃប្រឌិត",
-    video: "បង្កើតវីដេអូផ្សព្វផ្សាយខ្លីបញ្ឈរ 9:16 ក្រោម 60 វិនាទី។ ទាក់ទាញចំណាប់អារម្មណ៍ក្នុង 3 វិនាទីដំបូង និងបញ្ចប់ដោយការអំពាវនាវច្បាស់លាស់មួយ។",
+    styleLabel: "រចនាប័ទ្មវីដេអូ", videoLengthLabel: "Target video length", notesLabel: "ការណែនាំច្នៃប្រឌិតបន្ថែម", templateLabel: "គំនិតច្នៃប្រឌិត",
+    video: "បង្កើតវីដេអូផ្សព្វផ្សាយខ្លីបញ្ឈរ 9:16។ ទាក់ទាញចំណាប់អារម្មណ៍ក្នុង 3 វិនាទីដំបូង និងបញ្ចប់ដោយការអំពាវនាវច្បាស់លាស់មួយ។",
     language: "បង្កើតសារផ្សព្វផ្សាយ ស្គ្រីប ការនិយាយ និងអត្ថបទក្នុងវីដេអូជាភាសាខ្មែរ។\nMake the video in Khmer language.",
   },
 };
@@ -151,8 +154,10 @@ function requestFromDraft(draft) {
     draft.destination ? `${copy.labels.destination}: ${draft.destination}` : "",
     draft.extraNotes ? `${copy.notesLabel}: ${draft.extraNotes}` : "",
     `${copy.styleLabel}: ${copy.style[draft.style] || draft.style}`,
+    `${copy.videoLengthLabel}: ${copy.videoLength[draft.videoLength] || copy.videoLength["30"]}`,
+    `Target video length: ${Number(draft.videoLength) || 30} seconds`,
     template?.notes ? `${copy.templateLabel}: ${template.notes}` : "",
-    copy.video,
+    `${copy.video} Aim for a total runtime of about ${Number(draft.videoLength) || 30} seconds (allowed 10–60). Scene durations must add up near that target.`,
     copy.language,
   ].filter(Boolean).join("\n\n");
   const urls = [];
@@ -226,6 +231,7 @@ export function validateCampaignStep(input, step) {
   if (check(3)) {
     if (!CHOICES.language.includes(draft.language)) errors.language = "Choose English or Khmer.";
     if (!CHOICES.style.includes(draft.style)) errors.style = "Choose a video style.";
+    if (!CHOICES.videoLength.includes(draft.videoLength)) errors.videoLength = "Choose how long the video should be.";
     const links = draft.urls.split(/\r?\n/).map(value => value.trim()).filter(Boolean);
     if (links.length > 10) errors.urls = "Add up to 10 source links.";
     else if (links.some(url => url.length > 500 || !validWebUrl(url))) errors.urls = "Enter one complete http:// or https:// link per line (up to 500 characters each).";
@@ -260,4 +266,22 @@ export function buildCampaignRequest(input) {
     throw error;
   }
   return requestFromDraft(normalizedDraft(input));
+}
+
+/** Append a weekly-plan post's deltas onto a campaign draft request. */
+export function applyWeeklyPostToRequest(request, post) {
+  const day = String(post?.day || "").trim();
+  const role = String(post?.role || "").trim();
+  const title = String(post?.title || "").trim();
+  const briefDelta = String(post?.brief_delta || "").trim();
+  const notesDelta = String(post?.notes_delta || "").trim();
+  const header = [
+    "WEEKLY SERIES POST",
+    day ? `Day: ${day}` : "",
+    role ? `Role: ${role}` : "",
+    title ? `Title: ${title}` : "",
+  ].filter(Boolean).join("\n");
+  const brief = [request.brief, header, briefDelta].filter(Boolean).join("\n\n").slice(0, 4000);
+  const notes = [request.notes, notesDelta].filter(Boolean).join("\n\n").slice(0, 4000);
+  return { ...request, brief, notes };
 }

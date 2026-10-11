@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import uvicorn
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler
+from telegram.ext import CallbackQueryHandler, CommandHandler
 
 API_DIR = Path(__file__).resolve().parent.parent
 if str(API_DIR) not in sys.path:
@@ -18,6 +18,7 @@ if str(API_DIR) not in sys.path:
 from app.config import get_settings
 from app.runtime import init_runtime, sync_user_telegram_bots
 from app.telegram_bot.handlers import BotHandlers
+from app.telegram_bot.http import build_application
 from app.telegram_bot.hub import TelegramBotHub
 from app.webapp import app as web_app
 
@@ -30,11 +31,7 @@ logger = logging.getLogger("marketing_agent")
 
 async def run() -> None:
     settings = get_settings()
-    application = (
-        Application.builder()
-        .token(settings.telegram_bot_token)
-        .build()
-    )
+    application = build_application(settings.telegram_bot_token)
     runtime = init_runtime(settings=settings, bot=application.bot)
     handlers = BotHandlers(runtime.settings, runtime.store, runtime.pipeline)
     hub = TelegramBotHub(handlers)

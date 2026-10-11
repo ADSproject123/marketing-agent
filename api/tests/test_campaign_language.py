@@ -10,6 +10,7 @@ from unittest.mock import Mock, patch
 import httpx
 
 from app import webapp
+from app.dependencies import require_user
 from app.jobs.store import JobStatus, JobStore
 from app.runtime import Runtime
 
@@ -67,10 +68,10 @@ class CampaignLanguageApiTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(temp.cleanup)
         self.store = JobStore(Path(temp.name) / "jobs.db")
         self.runtime = SimpleNamespace(settings=SimpleNamespace(), create_and_start=Mock(side_effect=self._create))
-        webapp.app.dependency_overrides[webapp._require_user] = lambda: {"id": "account"}
-        self.addCleanup(webapp.app.dependency_overrides.pop, webapp._require_user)
-        runtime_patch = patch("app.webapp.get_runtime", return_value=self.runtime)
-        settings_patch = patch("app.webapp.resolve_settings_for_account", return_value=SimpleNamespace(allowed_telegram_user_id=1, gemini_api_keys=("test-key",)))
+        webapp.app.dependency_overrides[require_user] = lambda: {"id": "account"}
+        self.addCleanup(webapp.app.dependency_overrides.pop, require_user)
+        runtime_patch = patch("app.runtime.get_runtime", return_value=self.runtime)
+        settings_patch = patch("app.routers.jobs.resolve_settings_for_account", return_value=SimpleNamespace(allowed_telegram_user_id=1, gemini_api_keys=("test-key",)))
         runtime_patch.start()
         settings_patch.start()
         self.addCleanup(runtime_patch.stop)

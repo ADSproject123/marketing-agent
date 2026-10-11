@@ -16,11 +16,13 @@ TOKEN_TTL_SECONDS = 60 * 60 * 24 * 14  # 14 days
 
 
 def _auth_secret() -> str:
+    from app.config import DEV_AUTH_SECRET
+
     secret = os.getenv("AUTH_SECRET", "").strip()
     if secret:
         return secret
-    # Dev fallback — set AUTH_SECRET in production.
-    return "marketing-agent-dev-secret-change-me"
+    # Dev fallback — set AUTH_SECRET in production (validated by config.validate_production_secrets).
+    return DEV_AUTH_SECRET
 
 
 def hash_password(password: str) -> str:

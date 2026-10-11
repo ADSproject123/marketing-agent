@@ -69,7 +69,6 @@ const APPROVE_PATH = ["approve", "facebook", "done"];
 
 export const NODE_W = 150;
 export const NODE_H = 58;
-const RANK_GAP = 56;
 const NODE_GAP = 28;
 const PAD = 24;
 
@@ -81,7 +80,8 @@ export const ACTIVE_STATUSES = new Set([
   "posting",
 ]);
 
-export function computeLayout(direction = "horizontal") {
+/** Top-to-bottom canvas layout used by FlowDiagram. */
+export function computeLayout(direction = "vertical") {
   const ranks = [
     ["system"],
     ["gemini"],
@@ -92,45 +92,32 @@ export function computeLayout(direction = "horizontal") {
     ["done"],
   ];
   const nodes = {};
-  let x = PAD;
   let y = PAD;
-  let maxHeight = 0;
-  const vertical = direction === "vertical";
   const maxWidth = Math.max(...ranks.map((rank) => rank.length * NODE_W + (rank.length - 1) * NODE_GAP));
 
   ranks.forEach((rank) => {
-    const blockH = rank.length * NODE_H + (rank.length - 1) * NODE_GAP;
-    maxHeight = Math.max(maxHeight, blockH);
-    if (vertical) {
-      const blockW = rank.length * NODE_W + (rank.length - 1) * NODE_GAP;
-      const startX = PAD + (maxWidth - blockW) / 2;
-      rank.forEach((id, i) => {
-        nodes[id] = { id, x: startX + i * (NODE_W + NODE_GAP), y };
-      });
-      y += NODE_H + 38;
-    } else {
-      const startY = PAD + (Math.max(blockH, NODE_H * 2 + NODE_GAP) - blockH) / 2;
-      rank.forEach((id, i) => {
-        nodes[id] = { id, x, y: startY + i * (NODE_H + NODE_GAP) };
-      });
-      x += NODE_W + RANK_GAP;
-    }
+    const blockW = rank.length * NODE_W + (rank.length - 1) * NODE_GAP;
+    const startX = PAD + (maxWidth - blockW) / 2;
+    rank.forEach((id, i) => {
+      nodes[id] = { id, x: startX + i * (NODE_W + NODE_GAP), y };
+    });
+    y += NODE_H + 38;
   });
 
-  const height = vertical ? y - 38 + PAD : Math.max(maxHeight, NODE_H * 2 + NODE_GAP) + PAD * 2;
-  const width = vertical ? maxWidth + PAD * 2 : x - RANK_GAP + PAD;
+  const height = y - 38 + PAD;
+  const width = maxWidth + PAD * 2;
   const edges = EDGES.map((e) => {
     const a = nodes[e.from];
     const b = nodes[e.to];
     return {
       ...e,
-      sourceX: a.x + (vertical ? NODE_W / 2 : NODE_W),
-      sourceY: a.y + (vertical ? NODE_H : NODE_H / 2),
-      targetX: b.x + (vertical ? NODE_W / 2 : 0),
-      targetY: b.y + (vertical ? 0 : NODE_H / 2),
+      sourceX: a.x + NODE_W / 2,
+      sourceY: a.y + NODE_H,
+      targetX: b.x + NODE_W / 2,
+      targetY: b.y,
     };
   });
-  return { nodes, edges, width, height, direction };
+  return { nodes, edges, width, height, direction: "vertical" };
 }
 
 export function stageForJob(job) {

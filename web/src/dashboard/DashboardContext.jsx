@@ -1,15 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { createPromotion, fetchHealth, fetchJob, fetchJobs, fetchPromotions, createCampaignDraft as generateScript, saveStoryboard, reviseStoryboard, renderStoryboard } from "../api";
+import { createPromotion, fetchHealth, fetchJob, fetchJobs, fetchPromotions, createCampaignDraft as generateScript, createWeeklyPlan, saveStoryboard, reviseStoryboard, renderStoryboard } from "../api";
 import { useAuth } from "../auth";
 import { ACTIVE_STATUSES, pickDefaultJob } from "../flow";
-import { buildCampaignRequest, createCampaignDraft, validateCampaignStep } from "../campaign";
+import { applyWeeklyPostToRequest, buildCampaignRequest, createCampaignDraft, validateCampaignStep } from "../campaign";
 import { draftFromDemo } from "../demos";
-import { storyboardPayload, validateStoryboard } from "../storyboard";
+import { fitStoryboardSpeechCadence, storyboardPayload, validateStoryboard } from "../storyboard";
 
 const DashboardContext = createContext(null);
 const PROFILE_FIELDS = ["kind", "name", "description", "benefit", "location", "website"];
-const STEP_FIELDS = [PROFILE_FIELDS, ["goal", "audience"], ["offer", "offerTiming", "cta", "destination", "telegramUsername", "khqrFile"], ["style", "templateId", "language", "extraNotes", "urls", "assets"]];
+const STEP_FIELDS = [PROFILE_FIELDS, ["goal", "audience"], ["offer", "offerTiming", "cta", "destination", "telegramUsername", "khqrFile"], ["style", "videoLength", "templateId", "language", "extraNotes", "urls", "assets"]];
 
 function profileDraft(profile) {
   return Object.fromEntries(PROFILE_FIELDS.map((field) => [field, profile[field] || ""]));
@@ -55,6 +55,8 @@ export function DashboardProvider({ children }) {
   const [scriptLoading, setScriptLoading] = useState(false);
   const [scriptLoadError, setScriptLoadError] = useState("");
   const [scriptSetupId, setScriptSetupId] = useState(null);
+  const [weeklyPlan, setWeeklyPlan] = useState(null);
+  const [weeklySelectedDays, setWeeklySelectedDays] = useState([]);
   const scriptLoadRequest = useRef(0);
   const draftId = location.pathname === "/dashboard/compose" ? new URLSearchParams(location.search).get("draft") : null;
 
@@ -227,7 +229,7 @@ export function DashboardProvider({ children }) {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed.draft) {
-          setCampaignDraft((prev) => ({ ...prev, ...parsed.draft }));
+          setCampaignDraft(createCampaignDraft({ ...parsed.draft }));
           setCampaignStep(parsed.step ?? 0);
           if ((parsed.step ?? 0) === 0) setBusinessView("form");
         }
@@ -244,16 +246,16 @@ export function DashboardProvider({ children }) {
   }, []);
 
   const onCampaignDraftChange = useCallback((field, value) => {
-    if (submitting.current) return;
-    setCampaignDraft((previous) => {
-      if (!(field in previous) || field === "promotionId") return previous;
-      return {
-        ...previous,
-        [field]: value,
-        promotionId: PROFILE_FIELDS.includes(field) && value !== previous[field] ? "" : previous.promotionId,
-        ...(field === "kind" ? { cta: { shop: "visit", product: "buy", service: "message", other: "learn" }[value] || "learn" } : {}),
-      };
-    });
+    if (submitting.current || field === "promotionId") return;
+    // Allow newly added draft keys even when an older in-memory/local draft omits them.
+    const defaults = createCampaignDraft();
+    if (!(field in defaults)) return;
+    setCampaignDraft((previous) => ({
+      ...previous,
+      [field]: value,
+      promotionId: PROFILE_FIELDS.includes(field) && value !== previous[field] ? "" : previous.promotionId,
+      ...(field === "kind" ? { cta: { shop: "visit", product: "buy", service: "message", other: "learn" }[value] || "learn" } : {}),
+    }));
     setCampaignErrors((previous) => {
       const next = { ...previous };
       delete next[field];
@@ -304,12 +306,111 @@ export function DashboardProvider({ children }) {
   const onCampaignBack = useCallback(() => {
     if (submitting.current) return;
     setCampaignStep((previous) => {
+      if (previous === 6) {
+        setStartStatus("");
+        return 4;
+      }
       if (previous === 1) setBusinessView("form");
       return Math.max(0, previous - 1);
     });
     setCampaignErrors({});
     setStartStatus("");
   }, []);
+
+  const onPlanWeek = useCallback(async () => {
+    if (submitting.current || campaignStep !== 4) return;
+    const errors = validateCampaignStep(campaignDraft, 4);
+    setCampaignErrors(errors);
+    if (Object.keys(errors).length) {
+      const step = STEP_FIELDS.findIndex((fields) => fields.includes(Object.keys(errors)[0]));
+      if (step >= 0) setCampaignStep(step);
+      return;
+    }
+    submitting.current = true;
+    setStarting(true);
+    setStartStatusClass("");
+    setStartStatus("Planning your week…");
+    try {
+      const request = buildCampaignRequest(campaignDraft);
+      const data = await createWeeklyPlan({
+        brief: request.brief,
+        notes: request.notes,
+        urls: request.urls,
+        language: request.language,
+      });
+      const posts = Array.isArray(data?.posts) ? data.posts : [];
+      if (posts.length !== 3) throw new Error("The weekly plan could not be loaded. Please try again.");
+      setWeeklyPlan(posts);
+      setWeeklySelectedDays(posts.map((post) => post.day));
+      setCampaignStep(6);
+      setStartStatus("");
+      setStartStatusClass("");
+    } catch (err) {
+      if (err.errors) setCampaignErrors(err.errors);
+      setStartStatusClass("is-err");
+      setStartStatus(String(err.message || err));
+      if (err.status === 401) logout();
+    } finally {
+      submitting.current = false;
+      setStarting(false);
+    }
+  }, [campaignDraft, campaignStep, logout]);
+
+  const onWeeklyToggleDay = useCallback((day) => {
+    if (submitting.current) return;
+    setWeeklySelectedDays((previous) => (
+      previous.includes(day) ? previous.filter((item) => item !== day) : [...previous, day]
+    ));
+  }, []);
+
+  const onWeeklySelectAll = useCallback((selectAll) => {
+    if (submitting.current || !weeklyPlan) return;
+    setWeeklySelectedDays(selectAll ? weeklyPlan.map((post) => post.day) : []);
+  }, [weeklyPlan]);
+
+  const onCreateWeeklyDrafts = useCallback(async () => {
+    if (submitting.current || !weeklyPlan?.length) return;
+    const selected = weeklyPlan.filter((post) => weeklySelectedDays.includes(post.day));
+    if (!selected.length) return;
+    submitting.current = true;
+    setStarting(true);
+    setStartStatusClass("");
+    try {
+      const baseRequest = buildCampaignRequest(campaignDraft);
+      const created = [];
+      for (let index = 0; index < selected.length; index += 1) {
+        setStartStatus(`Creating draft ${index + 1} of ${selected.length}…`);
+        const payload = applyWeeklyPostToRequest(baseRequest, selected[index]);
+        const data = await generateScript(payload);
+        if (!data.job?.storyboard || !data.job.id) {
+          throw new Error("A script draft could not be loaded. Please try again.");
+        }
+        created.push(data.job);
+        setJobs((previous) => [data.job, ...previous.filter((job) => job.id !== data.job.id)]);
+      }
+      const first = created[0];
+      setScriptJob(first);
+      setScriptSetupId(first.id);
+      setStoryboard(first.storyboard);
+      setScriptDirty(false);
+      setScriptErrors({});
+      setScriptStatus("");
+      setScriptLoadError("");
+      setActiveJobId(first.id);
+      setCampaignStep(5);
+      setStartStatus("");
+      setStartStatusClass("is-ok");
+      navigate(`/dashboard/compose?draft=${encodeURIComponent(first.id)}`);
+    } catch (err) {
+      if (err.errors) setCampaignErrors(err.errors);
+      setStartStatusClass("is-err");
+      setStartStatus(String(err.message || err));
+      if (err.status === 401) logout();
+    } finally {
+      submitting.current = false;
+      setStarting(false);
+    }
+  }, [campaignDraft, logout, navigate, weeklyPlan, weeklySelectedDays]);
 
   const onCampaignSubmit = useCallback(
     async (ev) => {
@@ -394,7 +495,10 @@ export function DashboardProvider({ children }) {
 
   const onStoryboardAction = useCallback(async (action) => {
     if (submitting.current || !scriptJob || !storyboard) return;
-    const errors = validateStoryboard(storyboard);
+    // Auto-extend scene timing when a line needs a beat more time — don't block the user.
+    const fitted = fitStoryboardSpeechCadence(storyboard);
+    if (fitted !== storyboard) setStoryboard(fitted);
+    const errors = validateStoryboard(fitted);
     setScriptErrors(errors);
     if (Object.keys(errors).length) return;
     submitting.current = true;
@@ -402,7 +506,7 @@ export function DashboardProvider({ children }) {
     setScriptStatusClass("");
     setScriptStatus(action === "render" ? "Starting your video…" : action === "save" ? "Saving your script…" : "Revising your script…");
     try {
-      const payload = storyboardPayload(storyboard);
+      const payload = storyboardPayload(fitted);
       const data = action === "render"
         ? await renderStoryboard(scriptJob.id, payload, scriptJob.updated_at)
         : action === "save"
@@ -466,8 +570,14 @@ export function DashboardProvider({ children }) {
       onPromotionSelect,
       onDemoSelect,
       onCampaignSubmit,
+      onPlanWeek,
       onCampaignBack,
       onCampaignEditStep,
+      weeklyPlan,
+      weeklySelectedDays,
+      onWeeklyToggleDay,
+      onWeeklySelectAll,
+      onCreateWeeklyDrafts,
       hasSavedDraft,
       onRestoreDraft,
       onDiscardDraft,
@@ -500,8 +610,14 @@ export function DashboardProvider({ children }) {
       onPromotionSelect,
       onDemoSelect,
       onCampaignSubmit,
+      onPlanWeek,
       onCampaignBack,
       onCampaignEditStep,
+      weeklyPlan,
+      weeklySelectedDays,
+      onWeeklyToggleDay,
+      onWeeklySelectAll,
+      onCreateWeeklyDrafts,
       hasSavedDraft,
       onRestoreDraft,
       onDiscardDraft,

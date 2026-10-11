@@ -101,6 +101,18 @@ export async function ingestCampaignUrl(url) {
   });
 }
 
+export async function createWeeklyPlan({
+  brief = "",
+  urls = [],
+  notes = null,
+  language = "en",
+} = {}) {
+  return api("/api/campaign/weekly-plan", {
+    method: "POST",
+    body: { brief, urls, notes, language },
+  });
+}
+
 async function submitCampaign(path, {
   brief = "",
   urls = [],

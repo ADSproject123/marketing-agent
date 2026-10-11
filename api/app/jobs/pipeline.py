@@ -8,6 +8,7 @@ from pathlib import Path
 
 from telegram import Bot
 from telegram.constants import ParseMode
+from telegram.error import NetworkError, TimedOut
 
 from app.config import Settings
 from app.facebook.poster import post_page_video
@@ -16,6 +17,12 @@ from app.jobs.store import Job, JobSource, JobStatus, JobStore
 from app.llm.caption import draft_caption_package
 from app.llm.storyboard_render import narration_from_storyboard, package_from_storyboard
 from app.notebooklm.client import NotebookLMAuthError, generate_video_overview
+from app.telegram_bot.http import (
+    CONNECT_TIMEOUT,
+    MEDIA_WRITE_TIMEOUT,
+    POOL_TIMEOUT,
+    READ_TIMEOUT,
+)
 from app.telegram_bot.messages import approval_keyboard, format_preview_caption
 
 logger = logging.getLogger(__name__)
@@ -34,9 +41,11 @@ class Pipeline:
         return resolve_settings_for_account(job.owner_account_id, base=self.settings)
 
     def _bot_for(self, job: Job, settings: Settings | None = None) -> Bot:
+        from app.telegram_bot.http import build_bot
+
         settings = settings or self._settings_for(job)
         if settings.telegram_bot_token != self.settings.telegram_bot_token:
-            return Bot(token=settings.telegram_bot_token)
+            return build_bot(settings.telegram_bot_token)
         return self.bot
 
     async def run_generation(self, job_id: str) -> None:
@@ -113,7 +122,7 @@ class Pipeline:
                 if storyboard:
                     from app.video_finishing import finish_video
 
-                    await notify("Adding script captions and your business end card; checking the finished video…")
+                    await notify("Adding your end card and Khmer captions when needed; checking the finished video…")
                     self.store.update(job_id, notebook_id=notebook_id, artifact_id=artifact_id)
                     try:
                         video_path, report = await asyncio.to_thread(
@@ -144,15 +153,24 @@ class Pipeline:
                     status=JobStatus.AWAITING_APPROVAL,
                 )
 
-            await self._send_preview(
-                bot=bot,
-                settings=settings,
-                chat_id=job.chat_id,
-                job_id=job_id,
-                title=package.title,
-                caption=package.caption,
-                video_path=video_path,
-            )
+            try:
+                await self._send_preview(
+                    bot=bot,
+                    settings=settings,
+                    chat_id=job.chat_id,
+                    job_id=job_id,
+                    title=package.title,
+                    caption=package.caption,
+                    video_path=video_path,
+                )
+            except Exception:
+                # Video is already saved as awaiting_approval — don't fail the job
+                # when Telegram delivery times out or flaky network blocks upload.
+                logger.exception("Telegram preview delivery failed for job %s", job_id)
+                await notify(
+                    "Video is ready for review in the dashboard, but Telegram preview "
+                    "upload failed. Open the job there to approve or deny."
+                )
             if settings.facebook_enabled:
                 await notify("Ready for review — Approve posts to Facebook, Deny cancels.")
             else:
@@ -188,28 +206,61 @@ class Pipeline:
         text = format_preview_caption(job_id=job_id, title=title, caption=caption)
         keyboard = approval_keyboard(job_id)
 
+        async def _send_text(body: str):
+            return await bot.send_message(
+                chat_id=chat_id,
+                text=body,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+            )
+
+        message = None
         if video_path and video_path.exists():
             size = video_path.stat().st_size
             if size <= TELEGRAM_VIDEO_LIMIT_BYTES:
-                with video_path.open("rb") as fh:
-                    message = await bot.send_video(
-                        chat_id=chat_id,
-                        video=fh,
-                        caption=text[:1024],
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=keyboard,
-                        supports_streaming=True,
+                last_error: Exception | None = None
+                for attempt in range(3):
+                    try:
+                        with video_path.open("rb") as fh:
+                            message = await bot.send_video(
+                                chat_id=chat_id,
+                                video=fh,
+                                caption=text[:1024],
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=keyboard,
+                                supports_streaming=True,
+                                connect_timeout=CONNECT_TIMEOUT,
+                                read_timeout=READ_TIMEOUT,
+                                write_timeout=MEDIA_WRITE_TIMEOUT,
+                                pool_timeout=POOL_TIMEOUT,
+                            )
+                        break
+                    except (TimedOut, NetworkError) as exc:
+                        last_error = exc
+                        logger.warning(
+                            "Telegram send_video attempt %s/3 failed for job %s: %s",
+                            attempt + 1,
+                            job_id,
+                            exc,
+                        )
+                        if attempt < 2:
+                            await asyncio.sleep(2 * (attempt + 1))
+                if message is None:
+                    logger.error(
+                        "Telegram video upload failed after retries for job %s: %s",
+                        job_id,
+                        last_error,
                     )
-            else:
-                message = await bot.send_message(
-                    chat_id=chat_id,
-                    text=(
+                    message = await _send_text(
                         f"{text}\n\n"
                         f"<i>Video saved locally</i>: <code>{video_path}</code>\n"
-                        f"(Too large for Telegram upload; approve still posts the file.)"
-                    ),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=keyboard,
+                        f"(Telegram upload timed out; approve still posts the file.)"
+                    )
+            else:
+                message = await _send_text(
+                    f"{text}\n\n"
+                    f"<i>Video saved locally</i>: <code>{video_path}</code>\n"
+                    f"(Too large for Telegram upload; approve still posts the file.)"
                 )
         else:
             note = (
@@ -217,12 +268,7 @@ class Pipeline:
                 if settings.skip_notebooklm
                 else "\n\n<i>No video file attached.</i>"
             )
-            message = await bot.send_message(
-                chat_id=chat_id,
-                text=f"{text}{note}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=keyboard,
-            )
+            message = await _send_text(f"{text}{note}")
 
         self.store.update(job_id, telegram_preview_message_id=message.message_id)
 

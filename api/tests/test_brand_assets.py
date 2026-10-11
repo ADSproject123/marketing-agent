@@ -13,6 +13,7 @@ import httpx
 from PIL import Image
 
 from app import webapp
+from app.dependencies import require_user
 from app.jobs.store import JobSource, JobStatus, JobStore
 from app.notebooklm.client import generate_video_overview
 from app.uploads import MAX_ASSETS, build_brand_assets_pdf
@@ -62,11 +63,11 @@ class BrandAssetApiTests(unittest.IsolatedAsyncioTestCase):
             create_and_start=Mock(side_effect=create_and_start),
             start_job=Mock(side_effect=lambda job_id: self.started.append(job_id)),
         )
-        webapp.app.dependency_overrides[webapp._require_user] = lambda: {"id": "account"}
-        self.addCleanup(webapp.app.dependency_overrides.pop, webapp._require_user)
-        runtime_patch = patch("app.webapp.get_runtime", return_value=self.runtime)
+        webapp.app.dependency_overrides[require_user] = lambda: {"id": "account"}
+        self.addCleanup(webapp.app.dependency_overrides.pop, require_user)
+        runtime_patch = patch("app.runtime.get_runtime", return_value=self.runtime)
         settings_patch = patch(
-            "app.webapp.resolve_settings_for_account",
+            "app.routers.jobs.resolve_settings_for_account",
             return_value=SimpleNamespace(
                 allowed_telegram_user_id=1,
                 gemini_api_keys=("test-key",),

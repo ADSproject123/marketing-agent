@@ -128,7 +128,9 @@ class NotebookLanguageTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("បង្កើតវីដេអូខ្លីសម្រាប់ការផ្សព្វផ្សាយ។", arguments["instructions"])
             self.assertIn("ប្រើភាសាខ្មែរ", arguments["instructions"])
             self.assertIn("burned-in Khmer captions", arguments["instructions"])
-            self.assertIn("សារផ្សព្វផ្សាយសំរាប់អក្សររត់", arguments["instructions"])
+            self.assertIn("Khmer captions only", arguments["instructions"])
+            # Social caption must not be burned as an on-screen title/pill.
+            self.assertNotIn("សារផ្សព្វផ្សាយសំរាប់អក្សររត់", arguments["instructions"])
             self.assertTrue(
                 arguments["instructions"].endswith(
                     "Make the video in Khmer language with visible Khmer captions throughout."

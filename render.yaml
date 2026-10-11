@@ -29,9 +29,9 @@ services:
       - key: FACEBOOK_APP_SECRET
         sync: false
       - key: PUBLIC_API_URL
-        value: https://marketing-agent-api-s2rb.onrender.com
+        sync: false
       - key: FRONTEND_URL
-        value: https://marketing-agent-iota-taupe.vercel.app
+        sync: false
       - key: HOST
         value: 0.0.0.0
       - key: SKIP_NOTEBOOKLM
