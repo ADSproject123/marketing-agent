@@ -1,5 +1,6 @@
 import JobDetail from "../../components/JobDetail";
 import JobsList from "../../components/JobsList";
+import { PageHeader } from "../../components/ui";
 import { useDashboard } from "../../dashboard/DashboardContext";
 
 export default function JobsPage() {
@@ -8,14 +9,11 @@ export default function JobsPage() {
 
   return (
     <div className="dash-page">
-      <header className="dash-page-head">
-        <div>
-          <h1>Campaign history</h1>
-          <p className="dash-page-lede">
-            Keep every campaign in view, from the first idea to the final post.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        kicker="Workspace"
+        title="Campaign history"
+        description="Keep every campaign in view, from the first idea to the final post."
+      />
 
       <div className="ops-grid">
         <JobsList
@@ -25,7 +23,7 @@ export default function JobsPage() {
           onSelect={setActiveJobId}
           onRefresh={() => loadJobs()}
         />
-        <JobDetail job={activeJob} />
+        <JobDetail job={activeJob} onRefresh={() => loadJobs()} />
       </div>
     </div>
   );

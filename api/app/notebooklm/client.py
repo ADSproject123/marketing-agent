@@ -141,7 +141,7 @@ async def generate_video_overview(
             "or: notebooklm login --browser chrome"
         )
 
-    notebook_name = f"Marketing Agent {job_id[:8]}"
+    notebook_name = f"Rachana AI {job_id[:8]}"
     language = (language or settings.video_language or "en").strip()
     language_name = {"en": "English", "km": "Khmer (ខ្មែរ)"}.get(language, language)
     fmt = _video_format(video_format or settings.video_format)

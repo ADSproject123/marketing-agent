@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ingestCampaignUrl } from "../api";
 import { CAMPAIGN_ASSET_LIMITS } from "../campaign";
 import { TEMPLATES } from "../templates";
 import Icon from "./Icon";
+import { Alert, Button } from "./ui";
 
 const STEPS = ["Business", "Audience", "Offer & action", "Video style", "Review"];
 const STEP_COPY = [
@@ -82,6 +84,7 @@ function ReviewDetail({ label, value }) {
 export default function ComposeForm({
   draft, step, businessView = "list", onBusinessViewChange, promotions, profilesLoading,
   savingPromotion, profileError, errors = {}, starting, startStatus, startStatusClass,
+  hasSavedDraft = false, onRestoreDraft, onDiscardDraft,
   onDraftChange, onPromotionSelect, onDemoSelect, onSubmit, onBack, onEditStep,
 }) {
   const headingRef = useRef(null);
@@ -97,10 +100,54 @@ export default function ComposeForm({
   const destinationRequired = draft.cta === "visit" ? !draft.location.trim() : !draft.website.trim();
   const template = TEMPLATES.find((item) => item.id === draft.templateId);
   const assets = Array.isArray(draft.assets) ? draft.assets : [];
+  const [ingestUrl, setIngestUrl] = useState("");
+  const [ingestBusy, setIngestBusy] = useState(false);
+  const [ingestStatus, setIngestStatus] = useState("");
+  const [ingestError, setIngestError] = useState("");
   const assetPreviews = useMemo(
     () => assets.map((file) => ({ file, url: URL.createObjectURL(file) })),
     [assets],
   );
+  const khqrPreview = useMemo(
+    () => (draft.khqrFile instanceof File ? URL.createObjectURL(draft.khqrFile) : ""),
+    [draft.khqrFile],
+  );
+
+  const importFromUrl = async () => {
+    if (ingestBusy || busy) return;
+    const url = ingestUrl.trim();
+    if (!url) {
+      setIngestError("Paste a website URL to import.");
+      return;
+    }
+    setIngestBusy(true);
+    setIngestError("");
+    setIngestStatus("Reading the page and drafting your campaign…");
+    try {
+      const data = await ingestCampaignUrl(url);
+      const next = data?.draft || {};
+      for (const [field, value] of Object.entries({
+        name: next.name || "",
+        kind: next.kind || draft.kind,
+        description: next.description || "",
+        benefit: next.benefit || "",
+        location: next.location || "",
+        website: next.website || url,
+        goal: next.goal || draft.goal,
+        cta: next.cta || draft.cta,
+        audience: next.audience || "",
+      })) {
+        onDraftChange(field, value);
+      }
+      setIngestStatus("Campaign details filled from your link. Review and continue.");
+      setBusinessView("form");
+    } catch (err) {
+      setIngestStatus("");
+      setIngestError(err?.message || "Could not import that link.");
+    } finally {
+      setIngestBusy(false);
+    }
+  };
 
   useEffect(() => {
     if (previousStep.current !== step) {
@@ -119,6 +166,10 @@ export default function ComposeForm({
   useEffect(() => () => {
     for (const item of assetPreviews) URL.revokeObjectURL(item.url);
   }, [assetPreviews]);
+
+  useEffect(() => () => {
+    if (khqrPreview) URL.revokeObjectURL(khqrPreview);
+  }, [khqrPreview]);
 
   useEffect(() => {
     const firstError = Object.keys(errors)[0];
@@ -166,16 +217,33 @@ export default function ComposeForm({
             <h2 id="compose-title" ref={headingRef} tabIndex={-1}>Saved businesses & products</h2>
             <p>Select a row to continue, or create a new one.</p>
           </div>
-          <button
-            type="button"
-            className="primary-btn"
+          <Button
+            variant="primary"
+            size="md"
+            icon="sparkles"
             onClick={() => openBusinessForm("")}
             disabled={busy || profilesLoading}
           >
-            <Icon name="sparkles" size={16} />
             Create new
-          </button>
+          </Button>
         </div>
+
+        {hasSavedDraft ? (
+          <div className="campaign-draft-banner" role="status">
+            <div className="campaign-draft-banner-text">
+              <strong>Unsaved draft found</strong>
+              <span>You have an in-progress campaign draft from an earlier session.</span>
+            </div>
+            <div className="campaign-draft-banner-actions">
+              <Button variant="primary" size="xs" onClick={onRestoreDraft}>
+                Restore draft
+              </Button>
+              <Button variant="ghost" size="xs" onClick={onDiscardDraft}>
+                Discard
+              </Button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="campaign-table-wrap">
           {profilesLoading ? (
@@ -276,6 +344,29 @@ export default function ComposeForm({
         <fieldset className="campaign-step-fields" disabled={busy}>
           {step === 0 && businessView === "form" ? (
             <div className="campaign-profile-form">
+              <div className="campaign-import-banner">
+                <div className="campaign-import-copy">
+                  <strong>Auto-fill from website</strong>
+                  <span>Paste your site link and we’ll draft the campaign fields for you.</span>
+                </div>
+                <div className="campaign-import-row">
+                  <input
+                    type="url"
+                    value={ingestUrl}
+                    onChange={(event) => { setIngestUrl(event.target.value); setIngestError(""); }}
+                    placeholder="https://yourbrand.com"
+                    maxLength={500}
+                    disabled={busy || ingestBusy}
+                    aria-label="Website URL to import"
+                  />
+                  <button type="button" className="ghost-btn" onClick={importFromUrl} disabled={busy || ingestBusy}>
+                    <Icon name="sparkles" size={14} />
+                    {ingestBusy ? "Importing…" : "Import"}
+                  </button>
+                </div>
+                {ingestStatus ? <p className="compose-status is-ok" role="status">{ingestStatus}</p> : null}
+                {ingestError ? <p className="compose-status is-err" role="alert">{ingestError}</p> : null}
+              </div>
               <ChoiceGroup name="kind" label="What are you promoting?" options={KINDS} value={draft.kind} onChange={(value) => onDraftChange("kind", value)} compact />
               <label className="field"><span>Business or product name</span><input {...fieldProps("name")} value={draft.name} onChange={change("name")} required maxLength={120} autoComplete="organization" placeholder="For example: Soriya Coffee" /></label>
               <label className="field"><span>What do you offer?</span><textarea {...fieldProps("description")} value={draft.description} onChange={change("description")} required maxLength={1000} rows={3} placeholder="A neighborhood café serving locally roasted coffee and fresh pastries." /></label>
@@ -303,6 +394,41 @@ export default function ComposeForm({
               <label className="field"><span>When is the offer available? <span className="campaign-optional">Optional</span></span><input {...fieldProps("offerTiming")} value={draft.offerTiming} onChange={change("offerTiming")} maxLength={200} placeholder="For example: October 12–14, while supplies last" /></label>
               <label className="field"><span>What should viewers do?</span><select {...fieldProps("cta")} value={draft.cta} onChange={change("cta")}>{Object.entries(CTA_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
               <label className="field"><span>{destinationCopy[0]} {!destinationRequired ? <span className="campaign-optional">Optional</span> : null}</span><input {...fieldProps("destination")} value={draft.destination} onChange={change("destination")} maxLength={400} required={destinationRequired} placeholder={destinationCopy[1]} /><span className="field-hint">{draft.cta === "visit" && draft.location.trim() ? "We can use your saved location, or include the address you add here." : draft.cta !== "visit" && draft.website.trim() ? "We can use your website, or include the contact or link you add here." : "Add a contact, link, or address so viewers can take the next step."}</span></label>
+              <div className="campaign-field-pair">
+                <label className="field">
+                  <span>Telegram username <span className="campaign-optional">Optional</span></span>
+                  <input
+                    {...fieldProps("telegramUsername")}
+                    value={draft.telegramUsername || ""}
+                    onChange={change("telegramUsername")}
+                    maxLength={32}
+                    placeholder="@yourshop"
+                    autoComplete="off"
+                  />
+                  <span className="field-hint">Adds a scan-to-message QR on the video end card.</span>
+                </label>
+                <label className="field">
+                  <span>KHQR / Bakong image <span className="campaign-optional">Optional</span></span>
+                  <input
+                    {...fieldProps("khqrFile")}
+                    type="file"
+                    accept={CAMPAIGN_ASSET_LIMITS.accept.join(",")}
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] || null;
+                      onDraftChange("khqrFile", file);
+                      event.target.value = "";
+                    }}
+                  />
+                  <span className="field-hint">Upload your payment QR to show it on the closing card.</span>
+                  {draft.khqrFile ? (
+                    <div className="campaign-khqr-preview">
+                      {khqrPreview ? <img src={khqrPreview} alt="Uploaded KHQR" /> : null}
+                      <span>{draft.khqrFile.name}</span>
+                      <button type="button" className="ghost-btn campaign-assets-remove" onClick={() => onDraftChange("khqrFile", null)}>Remove</button>
+                    </div>
+                  ) : null}
+                </label>
+              </div>
             </>
           ) : null}
 
@@ -405,7 +531,7 @@ export default function ComposeForm({
                 <ReviewDetail label="Goal" value={GOALS.find((item) => item.value === draft.goal)?.label} /><ReviewDetail label="Audience" value={draft.audience} />
               </ReviewSection>
               <ReviewSection title="Offer & action" editLabel="Edit offer and action" onEdit={() => handleEditStep(2)}>
-                <ReviewDetail label="Offer" value={draft.offer || "No special offer"} /><ReviewDetail label="Available" value={draft.offerTiming} /><ReviewDetail label="Viewer action" value={CTA_LABELS[draft.cta]} /><ReviewDetail label="Destination" value={draft.destination || (draft.cta === "visit" ? draft.location : draft.website)} />
+                <ReviewDetail label="Offer" value={draft.offer || "No special offer"} /><ReviewDetail label="Available" value={draft.offerTiming} /><ReviewDetail label="Viewer action" value={CTA_LABELS[draft.cta]} /><ReviewDetail label="Destination" value={draft.destination || (draft.cta === "visit" ? draft.location : draft.website)} /><ReviewDetail label="Telegram" value={draft.telegramUsername ? `@${String(draft.telegramUsername).replace(/^@+/, "")}` : ""} /><ReviewDetail label="KHQR" value={draft.khqrFile?.name || ""} />
               </ReviewSection>
               <ReviewSection title="Video direction" editLabel="Edit video direction" onEdit={() => handleEditStep(3)}>
                 <ReviewDetail label="Personality" value={STYLES.find((item) => item.value === draft.style)?.label} /><ReviewDetail label="Language" value={draft.language === "km" ? "Khmer · ខ្មែរ" : "English"} /><ReviewDetail label="Creative angle" value={template?.label || "Chosen for your campaign"} /><ReviewDetail label="Extra direction" value={draft.extraNotes} /><ReviewDetail label="Source links" value={draft.urls} /><ReviewDetail label="Brand images" value={assets.length ? assets.map((file) => file.name).join(", ") : ""} />
@@ -416,14 +542,25 @@ export default function ComposeForm({
         </fieldset>
 
         <div className="campaign-wizard-actions">
-          <button type="button" className="ghost-btn" onClick={handleBack} disabled={busy}>
+          <Button variant="ghost" size="md" onClick={handleBack} disabled={busy}>
             {step === 0 && businessView === "form" ? "Back to list" : "Back"}
-          </button>
-          <button type="submit" className="primary-btn" disabled={busy}>
-            {step === 4 ? <Icon name="sparkles" size={16} /> : null}
-            {starting ? "Writing script…" : savingPromotion ? "Saving profile…" : step === 4 ? "Generate script" : step === 0 && !draft.promotionId ? "Save & continue" : "Continue"}
-            {!busy ? <Icon name="arrow-right" size={16} /> : null}
-          </button>
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            size="md"
+            disabled={busy}
+            loading={busy}
+            loadingText={starting ? "Writing script…" : savingPromotion ? "Saving profile…" : "Processing…"}
+            icon={!busy ? (step === 4 ? "sparkles" : "arrow-right") : undefined}
+            iconPosition={step === 4 ? "start" : "end"}
+          >
+            {step === 4
+              ? "Generate script"
+              : step === 0 && !draft.promotionId
+                ? "Save & continue"
+                : "Continue"}
+          </Button>
         </div>
         {startStatus ? <p className={`compose-status ${startStatusClass}`} role={startStatusClass === "is-err" ? "alert" : "status"}>{startStatus}</p> : null}
       </form>

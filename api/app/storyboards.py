@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import re
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -39,6 +40,9 @@ class Scene(BaseModel):
         return value
 
 
+BGM_TRACKS = Literal["none", "upbeat_commercial", "cozy_lofi", "energetic_trend", "acoustic_warmth"]
+
+
 class Storyboard(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     language: Literal["en", "km"]
@@ -47,9 +51,30 @@ class Storyboard(BaseModel):
     business_name: str = Field(default="", max_length=120)
     offer: str = Field(default="", max_length=700)
     contact: str = Field(default="", max_length=1000)
+    telegram_username: str = Field(default="", max_length=64)
+    endcard_qr_asset_id: str | None = Field(default=None, max_length=40)
+    bgm_track: BGM_TRACKS = "cozy_lofi"
+    bgm_volume: float = Field(default=0.22, ge=0.05, le=0.5, allow_inf_nan=False)
     hooks: list[Hook] = Field(min_length=3, max_length=3)
     selected_hook: str = Field(min_length=1, max_length=40)
     scenes: list[Scene] = Field(min_length=3, max_length=8)
+
+    @field_validator("bgm_volume", mode="before")
+    @classmethod
+    def reject_boolean_volume(cls, value):
+        if isinstance(value, bool):
+            raise ValueError("BGM volume must be a number.")
+        return value
+
+    @field_validator("telegram_username")
+    @classmethod
+    def normalize_telegram(cls, value: str) -> str:
+        text = (value or "").strip().lstrip("@")
+        if not text:
+            return ""
+        if not re.fullmatch(r"[A-Za-z0-9_]{5,32}", text):
+            raise ValueError("Telegram username must be 5–32 letters, numbers, or underscores.")
+        return text
 
     @model_validator(mode="after")
     def validate_timeline(self):
@@ -68,7 +93,6 @@ class Storyboard(BaseModel):
 
 def file_assets(sources: list[JobSource]) -> list[dict]:
     """Stable IDs refer to uploaded files, never arbitrary client file paths."""
-    from pathlib import Path
     return [
         {"id": str(index), "name": source.title or Path(source.value).name}
         for index, source in enumerate(source for source in sources if source.kind == "file")
@@ -94,14 +118,27 @@ def validate_storyboard(
     allowed = {asset["id"] for asset in file_assets(sources)}
     if any(scene["asset_id"] is not None and scene["asset_id"] not in allowed for scene in plan["scenes"]):
         raise ValueError("Choose an image uploaded to this campaign.")
+    qr_asset = plan.get("endcard_qr_asset_id")
+    if qr_asset is not None and qr_asset not in allowed:
+        raise ValueError("Choose a KHQR image uploaded to this campaign.")
     if original is not None:
-        for field in ("business_name", "offer", "contact"):
-            if plan[field] != original.get(field, ""):
+        for field in ("business_name", "offer", "contact", "telegram_username"):
+            if plan.get(field, "") != original.get(field, ""):
                 raise ValueError("Business details must stay consistent with the saved campaign setup.")
+        if plan.get("endcard_qr_asset_id") != original.get("endcard_qr_asset_id"):
+            raise ValueError("Business details must stay consistent with the saved campaign setup.")
     return plan
 
 
-def _business_facts(brief: str, sources: list[JobSource]) -> dict[str, str]:
+def _khqr_asset_id(sources: list[JobSource]) -> str | None:
+    for index, source in enumerate(source for source in sources if source.kind == "file"):
+        label = f"{source.title or ''} {Path(source.value).name}".lower()
+        if "khqr" in label or "bakong" in label:
+            return str(index)
+    return None
+
+
+def _business_facts(brief: str, sources: list[JobSource]) -> dict:
     text = "\n".join([brief, *(source.value for source in sources if source.kind == "text")])
     pairs = {}
     for line in text.splitlines():
@@ -110,12 +147,15 @@ def _business_facts(brief: str, sources: list[JobSource]) -> dict[str, str]:
             pairs[key.strip()] = value.strip()
     offer = pairs.get("Offer", pairs.get("ការផ្ដល់ជូន", ""))
     timing = pairs.get("Offer timing", pairs.get("រយៈពេលនៃការផ្ដល់ជូន", ""))
+    telegram = pairs.get("Telegram", pairs.get("តេលេក្រាម", "")).lstrip("@").strip()
     return {
         "business_name": pairs.get("Name", pairs.get("ឈ្មោះ", "")),
         "offer": f"{offer} · {timing}" if offer and timing else offer,
         "contact": pairs.get("Action destination", pairs.get("កន្លែងធ្វើសកម្មភាព", ""))
             or pairs.get("Website", pairs.get("គេហទំព័រ", ""))
             or pairs.get("Location", pairs.get("ទីតាំង", "")),
+        "telegram_username": telegram,
+        "endcard_qr_asset_id": _khqr_asset_id(sources),
     }
 
 
@@ -128,7 +168,9 @@ Return only JSON conforming to the supplied schema. Write the requested native l
 Generate exactly 3 distinct compelling opening hooks, each short enough to say in 2–5 seconds.
 The first scene's narration equals the selected hook. Plan 3–8 scenes, each 1–20 seconds,
 first scene 2–5 seconds, total 10–60 seconds. Target 25–40 seconds and natural speaking pace.
-Narration is the exact spoken script, separate from social caption. On-screen text is concise.
+Narration is the exact spoken script, separate from social caption.
+on_screen_text must be a short distinct headline (2–5 words), never a paraphrase of the narration
+and never a full sentence that repeats what is spoken; it is stored for editing UI, not burned mid-scene.
 Use provided asset IDs for the relevant uploaded logo or product photo; null means generated footage.
 Finish with the supplied customer action and exact contact destination; include the actual offer
 when provided. Avoid meaningless adjectives and generic introductions. Keep all field lengths
@@ -141,6 +183,7 @@ _KM_INSTRUCTIONS = """អ្នកជាអ្នកសរសេរស្គ្�
 បង្កើតឈុត scenes ចំនួន 3 ទៅ 8។ ឈុតនីមួយៗមាន 1 ទៅ 20 វិនាទី ឈុតដំបូង 2 ទៅ 5 វិនាទី
 និងរយៈពេលសរុប 10 ទៅ 60 វិនាទី។ ឈុតដំបូងត្រូវប្រើសារទាក់ទាញដែលបានជ្រើសរើស។
 narration ជាពាក្យនិយាយពិតប្រាកដ ហើយ caption ជាសារផ្សព្វផ្សាយសម្រាប់បណ្ដាញសង្គមផ្សេងពីស្គ្រីប។
+on_screen_text ត្រូវជាចំណងជើងខ្លី (2–5 ពាក្យ) ខុសពី narration មិនត្រូវសរសេរឡើងវិញជាប្រយោគពេញ។
 សរសេរចំណងជើង ស្គ្រីប សារទាក់ទាញ និងអត្ថបទក្នុងវីដេអូជាអក្សរខ្មែរ។ រក្សាឈ្មោះម៉ាក និងតំណដើម។
 ជ្រើសរើស asset_id នៃរូបភាពដែលបានផ្ដល់តាមឈុត ឬ null។
 បញ្ចប់ដោយការអំពាវនាវដែលបានផ្ដល់ និងព័ត៌មានទំនាក់ទំនងដើម។ បើមិនមានការផ្ដល់ជូន កុំបង្កើតថ្មី។
@@ -207,7 +250,14 @@ def draft_storyboard(
     if language == "km":
         prompt += "\nMake the video in Khmer language."
     raw = _call_json(settings, prompt, language=language)
-    # These fields are the customer's source data, not a creative model decision.
+    # These fields are the customer's source data / finishing choices, not LLM facts.
+    if raw.get("bgm_track") not in {"none", "upbeat_commercial", "cozy_lofi", "energetic_trend", "acoustic_warmth"}:
+        raw["bgm_track"] = "cozy_lofi"
+    try:
+        volume = float(raw.get("bgm_volume", 0.22))
+    except (TypeError, ValueError):
+        volume = 0.22
+    raw["bgm_volume"] = volume if 0.05 <= volume <= 0.5 else 0.22
     raw.update(facts)
     plan = validate_storyboard(raw, language=language, sources=sources)
     _assert_facts(plan, brief, sources)

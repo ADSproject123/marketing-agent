@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import qrcode
 from PIL import Image, ImageDraw, ImageFont, ImageOps, features
 
 from .jobs.store import JobSource
@@ -29,6 +30,15 @@ WIDTH = 720
 HEIGHT = 1280
 FPS = 30
 MAX_SCENES = 20
+SOFT_CUT_DURATION = 0.28
+SOFT_CUT_PEAK_ALPHA = 140  # ~55% opacity at the cut mid-point
+BGM_DIR = Path(__file__).resolve().parent.parent / "assets" / "audio" / "bgm"
+SFX_DIR = Path(__file__).resolve().parent.parent / "assets" / "audio" / "sfx"
+HOOK_WHOOSH = SFX_DIR / "hook_whoosh.wav"
+END_STING = SFX_DIR / "end_sting.wav"
+ALLOWED_BGM_TRACKS = frozenset({
+    "none", "upbeat_commercial", "cozy_lofi", "energetic_trend", "acoustic_warmth",
+})
 
 
 class VideoFinishingError(RuntimeError):
@@ -315,54 +325,342 @@ def _selected_asset(scene: dict[str, Any], assets: list[Path]) -> Path | None:
     return path
 
 
+def _is_logo_like(path: Path, image: Image.Image) -> bool:
+    """Treat small icons / transparent marks as watermarks, not full photo cards."""
+    name = path.name.lower()
+    if any(token in name for token in ("logo", "icon", "-mark", "_mark", "watermark")):
+        return True
+    width, height = image.size
+    if max(width, height) <= 512:
+        return True
+    if image.mode in {"RGBA", "LA"} or (image.mode == "P" and "transparency" in image.info):
+        alpha = image.convert("RGBA").split()[3]
+        # Mostly transparent canvas around a mark.
+        transparent = sum(1 for value in alpha.get_flattened_data() if value < 16)
+        if transparent / max(1, width * height) >= 0.25:
+            return True
+    return False
+
+
+def _draw_logo_watermark(canvas: Image.Image, image: Image.Image) -> None:
+    mark = ImageOps.contain(image.convert("RGBA"), (128, 128))
+    pad = 12
+    badge = Image.new("RGBA", (mark.width + pad * 2, mark.height + pad * 2), (255, 255, 255, 210))
+    badge.alpha_composite(mark, (pad, pad))
+    canvas.alpha_composite(badge, (36, 48))
+
+
+def _draw_product_card(canvas: Image.Image, draw: ImageDraw.ImageDraw, image: Image.Image) -> None:
+    photo = ImageOps.contain(image.convert("RGBA"), (420, 280))
+    card_w, card_h = photo.width + 28, photo.height + 28
+    x = (WIDTH - card_w) // 2
+    y = 150
+    draw.rounded_rectangle((x, y, x + card_w, y + card_h), radius=18, fill=(255, 255, 255, 230))
+    canvas.alpha_composite(photo, (x + 14, y + 14))
+
+
+def _asset_by_id(asset_id: Any, assets: list[Path]) -> Path | None:
+    if asset_id is None or asset_id == "":
+        return None
+    try:
+        index = int(asset_id)
+        if str(index) != str(asset_id) or index < 0 or index >= len(assets):
+            raise ValueError("Unknown asset")
+    except (ValueError, TypeError) as exc:
+        raise VideoFinishingError("The end-card QR image is unavailable. Upload KHQR again and retry.") from exc
+    path = assets[index]
+    if not path.is_file():
+        raise VideoFinishingError("The end-card QR image is missing. Upload it again before retrying.")
+    return path
+
+
+def _telegram_qr_image(username: str, size: int = 320) -> Image.Image:
+    handle = _clean_text(username).lstrip("@")
+    if not handle:
+        raise VideoFinishingError("A Telegram username is required to build the end-card QR.")
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=10, border=2)
+    qr.add_data(f"https://t.me/{handle}")
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="#111827", back_color="#ffffff").convert("RGBA")
+    return image.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def _load_qr_panel(storyboard: dict[str, Any], assets: list[Path], size: int = 320) -> Image.Image | None:
+    khqr_path = _asset_by_id(storyboard.get("endcard_qr_asset_id"), assets)
+    if khqr_path is not None:
+        try:
+            with Image.open(khqr_path) as original:
+                if original.format not in {"PNG", "JPEG", "WEBP"}:
+                    raise ValueError("Not a campaign image")
+                return ImageOps.contain(ImageOps.exif_transpose(original).convert("RGBA"), (size, size))
+        except (OSError, ValueError, Image.DecompressionBombError) as exc:
+            raise VideoFinishingError("The KHQR image cannot be rendered. Replace it and retry.") from exc
+    telegram = _clean_text(storyboard.get("telegram_username")).lstrip("@")
+    if telegram:
+        return _telegram_qr_image(telegram, size=size)
+    return None
+
+
+def _resolve_bgm(storyboard: dict[str, Any]) -> tuple[Path | None, float]:
+    track = _clean_text(storyboard.get("bgm_track") or "none") or "none"
+    if track not in ALLOWED_BGM_TRACKS or track == "none":
+        return None, 0.0
+    path = BGM_DIR / f"{track}.mp3"
+    if not path.is_file():
+        raise VideoFinishingError(
+            f"Background music track '{track}' is missing on the API server. Add it under assets/audio/bgm/."
+        )
+    try:
+        volume = float(storyboard.get("bgm_volume", 0.22))
+    except (TypeError, ValueError) as exc:
+        raise VideoFinishingError("Background music volume must be a number.") from exc
+    if not math.isfinite(volume) or not 0.05 <= volume <= 0.5:
+        raise VideoFinishingError("Background music volume must be between 0.05 and 0.5.")
+    return path, volume
+
+
+def _scene_boundary_times(cues: list[CaptionCue], *, closing_start: float) -> list[float]:
+    """Scene starts suitable for soft-cuts (skip t=0 and the closing-card moment)."""
+    boundaries: list[float] = []
+    previous = None
+    for cue in cues:
+        if cue.scene_index == previous:
+            continue
+        previous = cue.scene_index
+        start = float(cue.start)
+        if start <= 0.05:
+            continue
+        if abs(start - closing_start) < 0.05 or start >= closing_start:
+            continue
+        boundaries.append(start)
+    return boundaries
+
+
+def _soft_cut_alpha(time: float, boundary: float) -> int:
+    """Triangular veil alpha peaking at the scene boundary."""
+    half = SOFT_CUT_DURATION / 2
+    distance = abs(time - boundary)
+    if distance >= half:
+        return 0
+    progress = 1.0 - (distance / half)
+    return max(0, min(255, int(SOFT_CUT_PEAK_ALPHA * progress)))
+
+
+def _apply_soft_cut_veil(frame: Image.Image, alpha: int) -> Image.Image:
+    if alpha <= 0:
+        return frame
+    veiled = frame.copy()
+    veiled.alpha_composite(Image.new("RGBA", veiled.size, (0, 0, 0, alpha)))
+    return veiled
+
+
+def _overlay_timeline(
+    intervals: list[tuple[CaptionCue, bool]],
+    boundaries: list[float],
+) -> list[tuple[CaptionCue, bool, int]]:
+    """Split caption intervals so soft-cut veils can animate without changing duration."""
+    if not boundaries:
+        return [(cue, closing, 0) for cue, closing in intervals]
+    cuts = sorted(boundaries)
+    step = max(1.0 / FPS, 0.04)
+    half = SOFT_CUT_DURATION / 2
+    pieces: list[tuple[CaptionCue, bool, int]] = []
+    for cue, closing in intervals:
+        cursor = float(cue.start)
+        end = float(cue.end)
+        while cursor < end - 1e-6:
+            active = [boundary for boundary in cuts if abs(cursor - boundary) < half]
+            if active:
+                next_end = min(end, cursor + step)
+            else:
+                upcoming = [boundary - half for boundary in cuts if boundary - half > cursor + 1e-6]
+                next_end = min([end, *upcoming])
+            if next_end <= cursor + 1e-6:
+                next_end = min(end, cursor + step)
+            mid = (cursor + next_end) / 2
+            alpha = max((_soft_cut_alpha(mid, boundary) for boundary in cuts), default=0)
+            pieces.append((
+                CaptionCue(cursor, next_end, cue.text, cue.scene_index),
+                closing,
+                alpha,
+            ))
+            cursor = next_end
+    return pieces
+
+
+def apply_bgm_with_ducking(
+    video_path: Path,
+    bgm_path: Path,
+    output_path: Path,
+    *,
+    bgm_volume: float = 0.22,
+    duration: float,
+    closing_start: float | None = None,
+) -> None:
+    """Backward-compatible BGM mix; prefer ``apply_audio_polish`` for SFX + swell."""
+    apply_audio_polish(
+        video_path, output_path,
+        duration=duration,
+        closing_start=closing_start if closing_start is not None else max(0.0, duration - 1.6),
+        bgm_path=bgm_path,
+        bgm_volume=bgm_volume,
+    )
+
+
+def apply_audio_polish(
+    video_path: Path,
+    output_path: Path,
+    *,
+    duration: float,
+    closing_start: float,
+    bgm_path: Path | None = None,
+    bgm_volume: float = 0.22,
+) -> dict[str, Any]:
+    """Duck BGM under speech, swell into the end card, and layer hook/end SFX."""
+    ffmpeg = str(_binary("ffmpeg"))
+    if not HOOK_WHOOSH.is_file() or not END_STING.is_file():
+        raise VideoFinishingError(
+            "Finishing SFX assets are missing on the API server. Add hook_whoosh.wav and end_sting.wav under assets/audio/sfx/."
+        )
+    hook_delay_ms = 0
+    sting_delay_ms = max(0, int(round(closing_start * 1000)))
+    swell_start = max(0.0, duration - 1.6)
+    inputs = ["-i", str(video_path)]
+    filter_parts: list[str] = []
+    # Speech always comes from input 0.
+    next_index = 1
+    if bgm_path is not None:
+        inputs.extend(["-stream_loop", "-1", "-i", str(bgm_path)])
+        bgm_idx = next_index
+        next_index += 1
+        swell_vol = min(0.5, bgm_volume * 1.55)
+        # Raise BGM into the closing card while keeping base level elsewhere.
+        filter_parts.append(f"[0:a]asplit=2[sc][speak]")
+        filter_parts.append(
+            f"[{bgm_idx}:a]volume='if(gte(t,{swell_start:.3f}),{swell_vol:.3f},{bgm_volume:.3f})'"
+            f":eval=frame[bgm_dyn]"
+        )
+        filter_parts.append(
+            "[bgm_dyn][sc]sidechaincompress=threshold=0.08:ratio=5:attack=100:release=600[ducked_bgm]"
+        )
+        filter_parts.append(
+            "[speak][ducked_bgm]amix=inputs=2:duration=first:dropout_transition=2[bed]"
+        )
+        bed_label = "bed"
+    else:
+        filter_parts.append("[0:a]anull[bed]")
+        bed_label = "bed"
+
+    inputs.extend(["-i", str(HOOK_WHOOSH), "-i", str(END_STING)])
+    hook_idx = next_index
+    sting_idx = next_index + 1
+    filter_parts.append(
+        f"[{hook_idx}:a]volume=0.42,adelay={hook_delay_ms}|{hook_delay_ms},"
+        f"apad=whole_dur={duration:.3f}[hook]"
+    )
+    filter_parts.append(
+        f"[{sting_idx}:a]volume=0.48,adelay={sting_delay_ms}|{sting_delay_ms},"
+        f"apad=whole_dur={duration:.3f}[sting]"
+    )
+    filter_parts.append(
+        f"[{bed_label}][hook][sting]amix=inputs=3:duration=first:dropout_transition=2:normalize=0,"
+        "loudnorm=I=-16:TP=-1.5:LRA=11[aout]"
+    )
+    command = [
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        *inputs,
+        "-filter_complex", ";".join(filter_parts),
+        "-map", "0:v", "-map", "[aout]",
+        "-t", f"{duration:.6f}",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",
+        "-shortest", "-movflags", "+faststart",
+        str(output_path),
+    ]
+    _run(command, timeout=300)
+    return {
+        "sfx": ["hook_whoosh", "end_sting"],
+        "bgm": bgm_path is not None,
+        "closing_start": round(closing_start, 3),
+    }
+
+
 def _scene_overlay(scene: dict[str, Any], cue: CaptionCue, storyboard: dict[str, Any],
-                   renderer: _TextRenderer, assets: list[Path], *, closing: bool) -> Image.Image:
+                   renderer: _TextRenderer, assets: list[Path], *, closing: bool,
+                   opening: bool = False) -> Image.Image:
+    """Minimal overlays: captions + optional logo watermark; closing CTA card.
+
+    Mid-scene on_screen_text banners are intentionally not burned — they duplicated
+    NotebookLM text and bottom captions. Business name appears only on open/close.
+    """
     canvas = Image.new("RGBA", (WIDTH, HEIGHT))
     draw = ImageDraw.Draw(canvas)
     business = _clean_text(storyboard.get("business_name"))
-    if business:
-        header = renderer.fit(business, 600, 100, size=30)
-        draw.rounded_rectangle((40, 56, WIDTH - 40, 56 + header.height + 24), radius=16,
-                               fill=(13, 23, 40, 225))
-        canvas.alpha_composite(header, ((WIDTH - header.width) // 2, 68))
+    # No mid/opening business-name pill — it cluttered the frame. Name stays on the end card only.
+    _ = opening  # kept for call-site compatibility
+
     asset = None if closing else _selected_asset(scene, assets)
-    text_y = 214
     if asset:
         try:
             with Image.open(asset) as original:
                 if original.format not in {"PNG", "JPEG", "WEBP"}:
                     raise ValueError("Not a campaign image")
-                image = ImageOps.contain(ImageOps.exif_transpose(original).convert("RGBA"), (540, 340))
+                image = ImageOps.exif_transpose(original).convert("RGBA")
+                if _is_logo_like(asset, image):
+                    _draw_logo_watermark(canvas, image)
+                else:
+                    _draw_product_card(canvas, draw, image)
         except (OSError, ValueError, Image.DecompressionBombError) as exc:
             raise VideoFinishingError("A selected brand photo cannot be rendered. Replace it and retry.") from exc
-        draw.rounded_rectangle((76, 182, WIDTH - 76, 550), radius=20, fill=(255, 255, 255, 245))
-        canvas.alpha_composite(image, ((WIDTH - image.width) // 2, 196 + (340 - image.height) // 2))
-        text_y = 576
-    if not closing and _clean_text(scene.get("on_screen_text")):
-        top_text = renderer.fit(scene["on_screen_text"], 588, 190, size=38)
-        draw.rounded_rectangle((44, text_y - 14, WIDTH - 44, text_y + top_text.height + 14),
-                               radius=16, fill=(13, 23, 40, 225))
-        canvas.alpha_composite(top_text, ((WIDTH - top_text.width) // 2, text_y))
+
     if closing:
         # The closing card displays only exact approved values. No promotional
         # claims, prices, or contact details are supplied by the renderer.
-        draw.rounded_rectangle((40, 580 if asset else 340, WIDTH - 40, 906), radius=24,
-                               fill=(13, 23, 40, 247), outline=(113, 195, 193, 255), width=2)
-        y = 604 if asset else 374
-        if not asset:
-            y += _paste_text(canvas, renderer, business, y, 130, size=40) + 24
+        qr_panel = _load_qr_panel(storyboard, assets, size=300)
         offer = _clean_text(storyboard.get("offer"))
         contact = _clean_text(storyboard.get("contact"))
+        telegram = _clean_text(storyboard.get("telegram_username")).lstrip("@")
+        if qr_panel is not None:
+            panel_top, panel_bottom = 250, 980
+            draw.rounded_rectangle((40, panel_top, WIDTH - 40, panel_bottom), radius=24,
+                                   fill=(13, 23, 40, 247), outline=(113, 195, 193, 255), width=2)
+            y = panel_top + 28
+            if business:
+                y += _paste_text(canvas, renderer, business, y, 90, size=36) + 16
+            if offer:
+                y += _paste_text(canvas, renderer, offer, y, 70, size=28) + 14
+            qr_box = Image.new("RGBA", (320, 320), (255, 255, 255, 255))
+            qr_box.alpha_composite(qr_panel, ((320 - qr_panel.width) // 2, (320 - qr_panel.height) // 2))
+            qr_x = (WIDTH - 320) // 2
+            canvas.alpha_composite(qr_box, (qr_x, y))
+            y += 320 + 18
+            cta = (
+                f"Scan to message @{telegram}" if telegram and not storyboard.get("endcard_qr_asset_id")
+                else "Scan to order / pay"
+            )
+            if storyboard.get("language") == "km":
+                cta = (
+                    f"ស្កេនដើម្បីផ្ញើសារ @{telegram}" if telegram and not storyboard.get("endcard_qr_asset_id")
+                    else "ស្កេនដើម្បីបញ្ជាទិញ"
+                )
+            _paste_text(canvas, renderer, cta, y, 80, size=28, color="#bce6e3")
+            # QR closing card is the CTA — skip bottom narration captions to avoid clutter.
+            return canvas
+        draw.rounded_rectangle((40, 340, WIDTH - 40, 906), radius=24,
+                               fill=(13, 23, 40, 247), outline=(113, 195, 193, 255), width=2)
+        y = 374
+        if business:
+            y += _paste_text(canvas, renderer, business, y, 130, size=40) + 24
         remaining = 872 - y
         values = [value for value in (offer, contact) if value]
         for value in values:
             allowance = max(60, (remaining - 20 * len(values)) // max(1, len(values)))
             y += _paste_text(canvas, renderer, value, y, allowance, size=32,
                              color="#bce6e3" if value == contact else "white") + 20
-    caption = renderer.fit(cue.text, 588, 172, size=36)
-    bottom_y = HEIGHT - 140 - caption.height
-    draw.rounded_rectangle((42, bottom_y - 18, WIDTH - 42, HEIGHT - 120), radius=16,
-                           fill=(9, 14, 23, 235))
+
+    caption = renderer.fit(cue.text, 588, 172, size=34)
+    bottom_y = HEIGHT - 132 - caption.height
+    draw.rounded_rectangle((48, bottom_y - 14, WIDTH - 48, HEIGHT - 110), radius=14,
+                           fill=(9, 14, 23, 210))
     canvas.alpha_composite(caption, ((WIDTH - caption.width) // 2, bottom_y))
     return canvas
 
@@ -419,6 +717,36 @@ def _quality_report(metadata: dict[str, Any], storyboard: dict[str, Any], cues: 
             "The exact approved text was rendered on the closing card; generated footage was not checked with OCR."
             if text else "No offer supplied; no offer added." if key == "offer" else
             "No approved text was supplied for this field. Review whether it should appear in the video.")
+    has_qr = bool(_clean_text(storyboard.get("telegram_username")) or storyboard.get("endcard_qr_asset_id"))
+    add("endcard_qr", "Scan-to-action end card", "pass" if has_qr else "warn",
+        "Closing card includes a Telegram or KHQR scan target."
+        if has_qr else "No Telegram username or KHQR image was supplied for a scan end card.")
+    bgm_track = _clean_text(storyboard.get("bgm_track") or "none") or "none"
+    polish = metadata.get("audio_polish") or {}
+    soft_cuts = int(metadata.get("soft_cut_count") or 0)
+    if bgm_track != "none":
+        bgm_detail = f"Mixed track '{bgm_track}' with speech ducking"
+        if polish.get("bgm"):
+            bgm_detail += ", end-card swell"
+        if polish.get("sfx"):
+            bgm_detail += ", hook/end SFX"
+        if soft_cuts:
+            bgm_detail += f", {soft_cuts} scene soft-cuts"
+        bgm_detail += "."
+        add("bgm", "Background music", "pass", bgm_detail)
+    else:
+        extras = []
+        if polish.get("sfx"):
+            extras.append("hook/end SFX")
+        if soft_cuts:
+            extras.append(f"{soft_cuts} scene soft-cuts")
+        add("bgm", "Background music", "warn",
+            ("No background music selected; still applied " + " and ".join(extras) + ".")
+            if extras else "No background music selected for this video.")
+    add("audio_polish", "Edit polish", "pass" if soft_cuts or polish.get("sfx") else "warn",
+        f"Applied {soft_cuts} soft-cuts"
+        + (", hook whoosh + end sting" if polish.get("sfx") else "")
+        + ("." if soft_cuts or polish.get("sfx") else "No scene soft-cuts or SFX were applied."))
     add("brand_assets", "Chosen photos", "pass" if asset_count else "warn",
         f"Rendered {asset_count} scene photo selections from this campaign's uploaded images."
         if asset_count else "No campaign photo was selected for a scene. Review the generated visuals.")
@@ -462,15 +790,20 @@ def finish_video(video_path: Path, storyboard: dict[str, Any],
                 intervals.append((CaptionCue(closing_start, cue.end, cue.text, cue.scene_index), True))
             else:
                 intervals.append((cue, cue.start >= closing_start))
+        soft_boundaries = _scene_boundary_times(cues, closing_start=closing_start)
+        timeline = _overlay_timeline(intervals, soft_boundaries)
         playlist_lines = ["ffconcat version 1.0"]
-        for index, (cue, closing) in enumerate(intervals):
+        for index, (cue, closing, veil_alpha) in enumerate(timeline):
             frame_path = directory / f"overlay-{index:04}.png"
-            frame = _scene_overlay(storyboard["scenes"][cue.scene_index], cue, storyboard,
-                                   renderer, assets, closing=closing)
+            frame = _scene_overlay(
+                storyboard["scenes"][cue.scene_index], cue, storyboard,
+                renderer, assets, closing=closing, opening=cue.scene_index == 0,
+            )
+            frame = _apply_soft_cut_veil(frame, veil_alpha)
             frame.save(frame_path)
             playlist_lines.extend([f"file '{frame_path.name}'", f"duration {cue.end - cue.start:.6f}"])
         # The demuxer needs a final repeated image to honor the last duration.
-        playlist_lines.append(f"file 'overlay-{len(intervals) - 1:04}.png'")
+        playlist_lines.append(f"file 'overlay-{len(timeline) - 1:04}.png'")
         playlist = directory / "overlays.ffconcat"
         playlist.write_text("\n".join(playlist_lines) + "\n", encoding="utf-8")
         temporary_video = directory / "finished.mp4"
@@ -499,7 +832,37 @@ def finish_video(video_path: Path, storyboard: dict[str, Any],
             float(scene["duration_seconds"]) for scene in storyboard["scenes"]
         ), 3)
         metadata["text_renderer"] = "pango" if renderer.pango else "pillow"
+        metadata["soft_cut_count"] = len(soft_boundaries)
         temporary_srt = write_narration_srt(cues, directory / "narration.srt")
+        bgm_path, bgm_volume = _resolve_bgm(storyboard)
+        polish_info: dict[str, Any] = {}
+        if metadata["has_audio"]:
+            polished = directory / "finished-polished.mp4"
+            polish_info = apply_audio_polish(
+                temporary_video, polished,
+                duration=duration,
+                closing_start=closing_start,
+                bgm_path=bgm_path,
+                bgm_volume=bgm_volume,
+            )
+            metadata = probe_video(polished)
+            if metadata["has_audio"]:
+                metadata.update(_volume_stats(polished))
+            metadata["original_width"] = source_metadata["width"]
+            metadata["original_height"] = source_metadata["height"]
+            metadata["planned_duration_seconds"] = round(sum(
+                float(scene["duration_seconds"]) for scene in storyboard["scenes"]
+            ), 3)
+            metadata["text_renderer"] = "pango" if renderer.pango else "pillow"
+            metadata["soft_cut_count"] = len(soft_boundaries)
+            metadata["audio_polish"] = polish_info
+            if bgm_path is not None:
+                metadata["bgm_track"] = _clean_text(storyboard.get("bgm_track"))
+            temporary_video = polished
+        elif bgm_path is not None:
+            raise VideoFinishingError(
+                "Background music needs an audible narration track. Regenerate the video, then retry."
+            )
         # Publish completed artifacts only after encoding and probing succeed.
         temporary_video.replace(destination)
         temporary_srt.replace(subtitles_path)

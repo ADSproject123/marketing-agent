@@ -3,14 +3,14 @@ import { NavLink } from "react-router-dom";
 import { useAuth } from "../auth";
 import { useDashboard } from "../dashboard/DashboardContext";
 import Icon from "./Icon";
+import { Badge } from "./ui";
 
 const NAV = [
   { to: "/dashboard", end: true, label: "Overview", icon: "grid" },
   { to: "/dashboard/compose", label: "Create campaign", icon: "sparkles" },
   { to: "/dashboard/pipeline", label: "Live pipeline", icon: "activity" },
   { to: "/dashboard/jobs", label: "Campaign history", icon: "layers" },
-  // Integrations UI hidden for now — use server .env instead
-  // { to: "/dashboard/settings", label: "Integrations", icon: "lock" },
+  { to: "/dashboard/settings", label: "Integrations", icon: "lock" },
   { to: "/dashboard/guide", label: "Getting started", icon: "book" },
 ];
 
@@ -97,9 +97,14 @@ export default function DashboardSidebar({ open, onClose }) {
         inert={isMobile && !open ? true : undefined}
       >
         <div className="dash-sidebar-brand">
-          <NavLink to="/" className="site-logo" onClick={onClose}>
-            <span className="site-logo-mark" aria-hidden="true"><Icon name="sparkles" size={21} /></span>
-            <span className="site-logo-text">Marketing Agent<span className="dash-brand-suffix">AI campaign studio</span></span>
+          <NavLink to="/" className="site-logo" onClick={onClose} aria-label="Rachana AI home">
+            <img
+              src="/assets/logo/logo-horizontal-dark.svg"
+              alt="Rachana AI"
+              className="site-logo-img-dark"
+              width="133"
+              height="28"
+            />
           </NavLink>
           <button
             ref={closeRef}
@@ -126,7 +131,9 @@ export default function DashboardSidebar({ open, onClose }) {
               <Icon name={item.icon} size={19} />
               <span className="dash-side-label">{item.label}</span>
               {item.to === "/dashboard/pipeline" && liveCount > 0 ? (
-                <span className="dash-side-count" aria-label={`${liveCount} live campaigns`}>{liveCount}</span>
+                <Badge variant="primary" size="sm" className="dash-side-count" aria-label={`${liveCount} live campaigns`}>
+                  {liveCount}
+                </Badge>
               ) : null}
             </NavLink>
           ))}

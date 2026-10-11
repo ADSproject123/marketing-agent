@@ -29,7 +29,7 @@ def format_preview_caption(*, job_id: str, title: str, caption: str) -> str:
     )
 
 
-HELP_TEXT = """Marketing Agent — approval gate
+HELP_TEXT = """Rachana AI — approval gate
 
 Jobs are started from the web dashboard (or the system), not from Telegram.
 

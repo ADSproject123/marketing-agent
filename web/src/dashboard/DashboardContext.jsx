@@ -9,7 +9,7 @@ import { storyboardPayload, validateStoryboard } from "../storyboard";
 
 const DashboardContext = createContext(null);
 const PROFILE_FIELDS = ["kind", "name", "description", "benefit", "location", "website"];
-const STEP_FIELDS = [PROFILE_FIELDS, ["goal", "audience"], ["offer", "offerTiming", "cta", "destination"], ["style", "templateId", "language", "extraNotes", "urls", "assets"]];
+const STEP_FIELDS = [PROFILE_FIELDS, ["goal", "audience"], ["offer", "offerTiming", "cta", "destination", "telegramUsername", "khqrFile"], ["style", "templateId", "language", "extraNotes", "urls", "assets"]];
 
 function profileDraft(profile) {
   return Object.fromEntries(PROFILE_FIELDS.map((field) => [field, profile[field] || ""]));
@@ -31,6 +31,13 @@ export function DashboardProvider({ children }) {
 
   const [campaignDraft, setCampaignDraft] = useState(createCampaignDraft);
   const [campaignStep, setCampaignStep] = useState(0);
+  const [hasSavedDraft, setHasSavedDraft] = useState(() => {
+    try {
+      return Boolean(localStorage.getItem("ma_campaign_draft_v1"));
+    } catch {
+      return false;
+    }
+  });
   const [businessView, setBusinessView] = useState("list");
   const [campaignErrors, setCampaignErrors] = useState({});
   const [promotions, setPromotions] = useState([]);
@@ -175,6 +182,67 @@ export function DashboardProvider({ children }) {
     return () => clearInterval(timer);
   }, [activeJob, loadJobs]);
 
+  useEffect(() => {
+    try {
+      const clone = localStorage.getItem("ma_campaign_clone");
+      if (clone) {
+        localStorage.removeItem("ma_campaign_clone");
+        const parsed = JSON.parse(clone);
+        setCampaignDraft((prev) => ({
+          ...prev,
+          extraNotes: parsed.brief || "",
+          language: parsed.language || "en",
+        }));
+        setCampaignStep(0);
+        setBusinessView("form");
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (campaignStep >= 5 || submitting.current) return;
+    const timer = setTimeout(() => {
+      try {
+        if (
+          campaignDraft.name ||
+          campaignDraft.description ||
+          campaignDraft.extraNotes ||
+          campaignDraft.goal ||
+          campaignDraft.audience
+        ) {
+          localStorage.setItem(
+            "ma_campaign_draft_v1",
+            JSON.stringify({ draft: campaignDraft, step: campaignStep })
+          );
+          setHasSavedDraft(true);
+        }
+      } catch {}
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [campaignDraft, campaignStep]);
+
+  const onRestoreDraft = useCallback(() => {
+    try {
+      const raw = localStorage.getItem("ma_campaign_draft_v1");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.draft) {
+          setCampaignDraft((prev) => ({ ...prev, ...parsed.draft }));
+          setCampaignStep(parsed.step ?? 0);
+          if ((parsed.step ?? 0) === 0) setBusinessView("form");
+        }
+      }
+    } catch {}
+    setHasSavedDraft(false);
+  }, []);
+
+  const onDiscardDraft = useCallback(() => {
+    try {
+      localStorage.removeItem("ma_campaign_draft_v1");
+    } catch {}
+    setHasSavedDraft(false);
+  }, []);
+
   const onCampaignDraftChange = useCallback((field, value) => {
     if (submitting.current) return;
     setCampaignDraft((previous) => {
@@ -205,6 +273,8 @@ export function DashboardProvider({ children }) {
       promotionId: profile?.id || "",
       cta: { shop: "visit", product: "buy", service: "message", other: "learn" }[profile?.kind || "shop"],
       assets: [],
+      khqrFile: null,
+      telegramUsername: "",
     }));
     setCampaignErrors({});
     setProfileError("");
@@ -398,6 +468,9 @@ export function DashboardProvider({ children }) {
       onCampaignSubmit,
       onCampaignBack,
       onCampaignEditStep,
+      hasSavedDraft,
+      onRestoreDraft,
+      onDiscardDraft,
       scriptJob, storyboard, scriptErrors, scriptBusy, scriptStatus, scriptStatusClass,
       scriptDirty, scriptLoading, scriptLoadError, onStoryboardChange, onStoryboardAction, onReloadScript,
       scriptCanEditSetup: scriptSetupId === scriptJob?.id,
@@ -429,6 +502,9 @@ export function DashboardProvider({ children }) {
       onCampaignSubmit,
       onCampaignBack,
       onCampaignEditStep,
+      hasSavedDraft,
+      onRestoreDraft,
+      onDiscardDraft,
       scriptJob, storyboard, scriptErrors, scriptBusy, scriptStatus, scriptStatusClass,
       scriptDirty, scriptLoading, scriptLoadError, onStoryboardChange, onStoryboardAction, onReloadScript,
       scriptSetupId,

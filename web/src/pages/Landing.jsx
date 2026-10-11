@@ -73,7 +73,7 @@ function ProductPreview() {
       <div className="preview-app">
         <div className="preview-sidebar" aria-hidden="true">
           <span className="preview-brand">
-            <Icon name="sparkles" size={17} />
+            <img src="/assets/logo/mark-white.svg" alt="" width="17" height="17" />
           </span>
           <span className="preview-nav is-active">
             <Icon name="grid" size={17} />
@@ -87,7 +87,7 @@ function ProductPreview() {
           <span className="preview-nav">
             <Icon name="clock" size={17} />
           </span>
-          <span className="preview-avatar">M</span>
+          <span className="preview-avatar">R</span>
         </div>
         <div className="preview-content">
           <div className="preview-heading">
@@ -175,7 +175,7 @@ function ProductPreview() {
       </div>
       <div className="preview-floating">
         <span className="preview-floating-icon">
-          <Icon name="circle-check" size={20} />
+          <img src="/assets/icons/icon-square-purple-192.png" alt="" width="24" height="24" style={{ borderRadius: 6, display: "block" }} />
         </span>
         <div>
           <strong>From idea to ready-to-review.</strong>
@@ -194,8 +194,8 @@ export default function Landing() {
         <section className="landing-hero" aria-labelledby="landing-title">
           <div className="landing-hero-copy">
             <p className="landing-eyebrow">
-              <span>
-                <Icon name="sparkles" size={14} />
+              <span className="landing-eyebrow-mark">
+                <img src="/assets/logo/mark-purple.svg" alt="" width="14" height="14" />
               </span>{" "}
               Your AI marketing workspace <Icon name="arrow-right" size={13} />
             </p>

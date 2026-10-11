@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from telegram import Bot
 
@@ -18,6 +18,24 @@ from app.telegram_bot.hub import TelegramBotHub
 logger = logging.getLogger(__name__)
 
 
+def reconcile_interrupted_jobs(store: JobStore) -> int:
+    """Find jobs left running across server restarts and mark them failed."""
+    stale_jobs = store.list_by_statuses([
+        JobStatus.GENERATING,
+        JobStatus.QUEUED,
+        JobStatus.POSTING,
+    ])
+    for job in stale_jobs:
+        store.update(
+            job.id,
+            status=JobStatus.FAILED,
+            error="System restarted while processing. Please retry your campaign.",
+        )
+    if stale_jobs:
+        logger.info("Reconciled %d interrupted jobs on startup", len(stale_jobs))
+    return len(stale_jobs)
+
+
 @dataclass
 class Runtime:
     settings: Settings
@@ -25,7 +43,8 @@ class Runtime:
     bot: Bot
     pipeline: Pipeline
     bot_hub: TelegramBotHub | None
-    _running: set[str]
+    _running: set[str] = field(default_factory=set)
+    _tasks: dict[str, asyncio.Task] = field(default_factory=dict)
 
     def start_job(self, job_id: str) -> None:
         if job_id in self._running:
@@ -35,10 +54,41 @@ class Runtime:
         async def _runner() -> None:
             try:
                 await self.pipeline.run_generation(job_id)
+            except asyncio.CancelledError:
+                logger.info("Job %s generation task cancelled", job_id)
+                raise
             finally:
                 self._running.discard(job_id)
+                self._tasks.pop(job_id, None)
 
-        asyncio.create_task(_runner())
+        task = asyncio.create_task(_runner())
+        self._tasks[job_id] = task
+
+    def cancel_job(self, job_id: str) -> bool:
+        """Cancel a running or queued job."""
+        task = self._tasks.get(job_id)
+        if task and not task.done():
+            task.cancel()
+        self._running.discard(job_id)
+        self._tasks.pop(job_id, None)
+
+        job = self.store.get(job_id)
+        if not job:
+            return False
+        terminal_statuses = {
+            JobStatus.POSTED,
+            JobStatus.DENIED,
+            JobStatus.FAILED,
+            JobStatus.CANCELLED,
+        }
+        if job.status not in terminal_statuses:
+            self.store.update(
+                job_id,
+                status=JobStatus.CANCELLED,
+                error="Campaign cancelled by user.",
+            )
+            return True
+        return False
 
     def create_and_start(
         self,
@@ -94,6 +144,7 @@ def init_runtime(
     global _runtime
     settings = settings or get_settings()
     store = JobStore(settings.db_path)
+    reconcile_interrupted_jobs(store)
     bot = bot or Bot(token=settings.telegram_bot_token)
     pipeline = Pipeline(settings, store, bot)
     _runtime = Runtime(
@@ -103,6 +154,7 @@ def init_runtime(
         pipeline=pipeline,
         bot_hub=bot_hub,
         _running=set(),
+        _tasks={},
     )
     return _runtime
 

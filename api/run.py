@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the Marketing Agent API + Telegram approval gate.
+"""Start the Rachana AI API + Telegram approval gate.
 
 Usage (from this folder):
     python run.py

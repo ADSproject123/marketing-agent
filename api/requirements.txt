@@ -1,5 +1,6 @@
 aiofiles==25.1.0
 anyio==4.15.1
+beautifulsoup4==4.14.3
 cryptography==44.0.2
 fastapi==0.115.12
 google-genai==2.29.0
@@ -13,6 +14,7 @@ pynotebooklm==0.21.0
 python-dotenv==1.2.4
 python-multipart==0.0.22
 python-telegram-bot==21.10
+qrcode==8.2
 starlette==0.46.2
 uvicorn==0.34.2
 uvloop==0.23.0

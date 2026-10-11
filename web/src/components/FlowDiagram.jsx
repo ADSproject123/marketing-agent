@@ -46,7 +46,7 @@ export default function FlowDiagram({ job, fullscreen = false }) {
         width={layout.width}
         height={layout.height}
         role="img"
-        aria-label="Live marketing agent pipeline"
+        aria-label="Live Rachana AI pipeline"
       >
         <defs>
           <marker

@@ -10,6 +10,7 @@ export const CAMPAIGN_FIELD_LIMITS = Object.freeze({
   offer: 400,
   offerTiming: 200,
   destination: 400,
+  telegramUsername: 32,
   extraNotes: 500,
   urls: 5000,
 });
@@ -24,9 +25,9 @@ export const CAMPAIGN_ASSET_LIMITS = Object.freeze({
 const DEFAULT_DRAFT = {
   promotionId: "", kind: "shop", name: "", description: "", benefit: "",
   location: "", website: "", goal: "sales", audience: "", offer: "",
-  offerTiming: "", cta: "visit", destination: "", style: "warm",
-  extraNotes: "", urls: "", templateId: "", language: "en",
-  assets: [],
+  offerTiming: "", cta: "visit", destination: "", telegramUsername: "",
+  style: "warm", extraNotes: "", urls: "", templateId: "", language: "en",
+  assets: [], khqrFile: null,
 };
 
 const CHOICES = {
@@ -45,6 +46,7 @@ const COPY = {
       benefit: "Main customer benefit", location: "Location", website: "Website",
       goal: "Campaign goal", audience: "Target audience", offer: "Offer",
       offerTiming: "Offer timing", cta: "Call to action", destination: "Action destination",
+      telegramUsername: "Telegram",
     },
     kind: { shop: "Shop or business", product: "Product", service: "Service", other: "Other" },
     goal: { sales: "Drive sales", awareness: "Build awareness", launch: "Introduce something new" },
@@ -63,6 +65,7 @@ const COPY = {
       benefit: "អត្ថប្រយោជន៍សំខាន់សម្រាប់អតិថិជន", location: "ទីតាំង", website: "គេហទំព័រ",
       goal: "គោលដៅយុទ្ធនាការ", audience: "អតិថិជនគោលដៅ", offer: "ការផ្ដល់ជូន",
       offerTiming: "រយៈពេលនៃការផ្ដល់ជូន", cta: "ការអំពាវនាវឱ្យធ្វើសកម្មភាព", destination: "កន្លែងធ្វើសកម្មភាព",
+      telegramUsername: "តេលេក្រាម",
     },
     kind: { shop: "ហាង ឬអាជីវកម្ម", product: "ផលិតផល", service: "សេវាកម្ម", other: "ផ្សេងទៀត" },
     goal: { sales: "ជំរុញការលក់", awareness: "បង្កើនការស្គាល់", launch: "ណែនាំអ្វីដែលថ្មី" },
@@ -77,23 +80,29 @@ const COPY = {
 };
 
 export function createCampaignDraft(overrides = {}) {
-  const { assets, ...rest } = overrides;
+  const { assets, khqrFile, ...rest } = overrides;
   return {
     ...DEFAULT_DRAFT,
     ...rest,
     assets: Array.isArray(assets) ? assets : [],
+    khqrFile: khqrFile instanceof File ? khqrFile : null,
   };
 }
 
 function normalizedDraft(draft) {
   const base = createCampaignDraft(draft);
   const assets = Array.isArray(draft?.assets) ? draft.assets : [];
+  const khqrFile = draft?.khqrFile instanceof File ? draft.khqrFile : null;
   const normalized = Object.fromEntries(
     Object.entries(base)
-      .filter(([key]) => key !== "assets")
+      .filter(([key]) => key !== "assets" && key !== "khqrFile")
       .map(([key, value]) => [key, String(value ?? "").trim()])
   );
-  return { ...normalized, assets };
+  return { ...normalized, assets, khqrFile };
+}
+
+function normalizeTelegramUsername(value) {
+  return String(value || "").trim().replace(/^@+/, "");
 }
 
 function assetExtension(file) {
@@ -125,7 +134,10 @@ function requestFromDraft(draft) {
     // Keep long contact details in notes so every allowed answer fits the API limits.
     if (["website", "destination"].includes(field)) continue;
     if (!draft[field]) continue;
-    const value = copy[field]?.[draft[field]] || draft[field];
+    const value = field === "telegramUsername"
+      ? normalizeTelegramUsername(draft[field])
+      : (copy[field]?.[draft[field]] || draft[field]);
+    if (!value) continue;
     lines.push(`${copy.labels[field]}: ${value}`);
   }
   if (!draft.offer) lines.push(copy.noOffer);
@@ -149,6 +161,15 @@ function requestFromDraft(draft) {
     const key = validWebUrl(url) ? new URL(url).href : url;
     if (!seen.has(key)) { seen.add(key); urls.push(url); }
   }
+  const assets = Array.isArray(draft.assets) ? [...draft.assets] : [];
+  if (draft.khqrFile instanceof File) {
+    const extension = assetExtension(draft.khqrFile) || ".png";
+    const renamed = new File([draft.khqrFile], `khqr${extension}`, {
+      type: draft.khqrFile.type || "image/png",
+      lastModified: draft.khqrFile.lastModified,
+    });
+    assets.unshift(renamed);
+  }
   // Send the chosen predefined template id so the API can tag the job.
   return {
     brief,
@@ -156,7 +177,7 @@ function requestFromDraft(draft) {
     urls,
     template: draft.templateId || "",
     language: draft.language,
-    assets: Array.isArray(draft.assets) ? draft.assets : [],
+    assets,
   };
 }
 
@@ -167,7 +188,7 @@ export function validateCampaignStep(input, step) {
   const fieldsByStep = {
     0: ["name", "description", "benefit", "location", "website"],
     1: ["audience"],
-    2: ["offer", "offerTiming", "destination"],
+    2: ["offer", "offerTiming", "destination", "telegramUsername"],
     3: ["extraNotes", "urls", "assets"],
   };
   for (const [index, fields] of Object.entries(fieldsByStep)) {
@@ -192,6 +213,15 @@ export function validateCampaignStep(input, step) {
     else if (draft.cta === "visit" && !draft.location && !draft.destination) errors.destination = "Add a location or destination so customers know where to visit.";
     else if (draft.cta !== "visit" && !draft.destination && !draft.website) errors.destination = "Add a website, contact, or destination for this action.";
     if (draft.offerTiming && !draft.offer) errors.offerTiming = "Add the offer this timing applies to, or leave the timing blank.";
+    const telegram = normalizeTelegramUsername(draft.telegramUsername);
+    if (telegram && !/^[A-Za-z0-9_]{5,32}$/.test(telegram)) {
+      errors.telegramUsername = "Use a Telegram username with 5–32 letters, numbers, or underscores.";
+    }
+    if (draft.khqrFile) {
+      if (!isAllowedAsset(draft.khqrFile)) errors.khqrFile = "Use a PNG, JPG, or WEBP KHQR image.";
+      else if (Number(draft.khqrFile.size || 0) > CAMPAIGN_ASSET_LIMITS.maxBytes) errors.khqrFile = "KHQR image must be 5 MB or smaller.";
+      else if (Number(draft.khqrFile.size || 0) <= 0) errors.khqrFile = "The KHQR image is empty. Choose another file.";
+    }
   }
   if (check(3)) {
     if (!CHOICES.language.includes(draft.language)) errors.language = "Choose English or Khmer.";
@@ -203,8 +233,9 @@ export function validateCampaignStep(input, step) {
       errors.templateId = "Choose a creative template or start without one.";
     }
     const assets = Array.isArray(draft.assets) ? draft.assets : [];
-    if (assets.length > CAMPAIGN_ASSET_LIMITS.maxFiles) {
-      errors.assets = `Add up to ${CAMPAIGN_ASSET_LIMITS.maxFiles} logo or product photos.`;
+    const totalAssets = assets.length + (draft.khqrFile ? 1 : 0);
+    if (totalAssets > CAMPAIGN_ASSET_LIMITS.maxFiles) {
+      errors.assets = `Add up to ${CAMPAIGN_ASSET_LIMITS.maxFiles} images including your KHQR code.`;
     } else if (assets.some((file) => !isAllowedAsset(file))) {
       errors.assets = "Use PNG, JPG, or WEBP images only.";
     } else if (assets.some((file) => Number(file?.size || 0) > CAMPAIGN_ASSET_LIMITS.maxBytes)) {

@@ -8,6 +8,16 @@ import {
   startFacebookConnect,
 } from "../../api";
 import Icon from "../../components/Icon";
+import {
+  Alert,
+  Button,
+  FormField,
+  Input,
+  PageHeader,
+  Panel,
+  StatCard,
+  Textarea,
+} from "../../components/ui";
 
 const EMPTY = {
   telegram_bot_token: "",
@@ -105,8 +115,8 @@ export default function SettingsPage() {
         payload.gemini_api_keys = form.gemini_api_keys.trim();
       }
       const data = await saveIntegrations(payload);
-      setStatus(data.integrations);
-      setMessage(data.message || "Saved.");
+      setStatus(data.integrations || {});
+      setMessage("Integrations saved.");
       setForm((prev) => ({
         ...prev,
         telegram_bot_token: "",
@@ -124,39 +134,22 @@ export default function SettingsPage() {
   async function onConnectFacebook() {
     setConnectingFb(true);
     setError("");
-    setMessage("");
     try {
-      const data = await startFacebookConnect();
-      window.location.href = data.url;
+      const { auth_url } = await startFacebookConnect();
+      window.location.href = auth_url;
     } catch (err) {
       setError(String(err.message || err));
       setConnectingFb(false);
     }
   }
 
-  async function onSelectPage(pageId) {
-    setSaving(true);
-    setError("");
-    try {
-      const data = await selectFacebookPage(pageId);
-      setStatus(data.integrations);
-      setPendingPages([]);
-      setMessage(data.message || "Page connected.");
-    } catch (err) {
-      setError(String(err.message || err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   async function onDisconnectFacebook() {
+    if (!confirm("Disconnect your Facebook Page?")) return;
     setSaving(true);
     setError("");
     try {
-      const data = await disconnectFacebook();
-      setStatus((prev) => ({ ...prev, ...data.integrations }));
-      setPendingPages([]);
-      setMessage(data.message || "Facebook disconnected.");
+      await disconnectFacebook();
+      setMessage("Facebook disconnected.");
       await load();
     } catch (err) {
       setError(String(err.message || err));
@@ -165,85 +158,110 @@ export default function SettingsPage() {
     }
   }
 
-  const ready = status?.ready || {};
-  const oauthReady = Boolean(facebookOauth?.configured);
+  async function onSelectPage(pageId) {
+    setSaving(true);
+    setError("");
+    try {
+      await selectFacebookPage(pageId);
+      setMessage("Page selected.");
+      setPendingPages([]);
+      await load();
+    } catch (err) {
+      setError(String(err.message || err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const ready = {
+    telegram: Boolean(status?.telegram_ready),
+    gemini: Boolean(status?.gemini_api_keys_set),
+    facebook: Boolean(status?.facebook_connected),
+  };
+
+  const oauthReady = Boolean(facebookOauth?.oauth_configured);
 
   return (
     <div className="dash-page">
-      <header className="dash-page-head">
-        <div>
-          <p className="panel-kicker">Account</p>
-          <h1>Integrations</h1>
-          <p className="dash-page-lede">
-            Connect Telegram, Gemini, and Facebook. Facebook uses Login — no pasting
-            Page tokens. Other secrets stay encrypted after you save.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        kicker="Account"
+        title="Integrations"
+        description="Connect Telegram, Gemini, and Facebook. Facebook uses Login — no pasting Page tokens. Other secrets stay encrypted after you save."
+      />
 
       {loading ? <p className="empty-panel">Loading settings…</p> : null}
-      {error ? <p className="auth-error">{error}</p> : null}
-      {message ? <p className="compose-status is-ok">{message}</p> : null}
+      {error ? (
+        <Alert tone="danger" title="Error" className="mb-4">
+          {error}
+        </Alert>
+      ) : null}
+      {message ? (
+        <Alert tone="success" title="Success" className="mb-4">
+          {message}
+        </Alert>
+      ) : null}
 
       {!loading ? (
         <>
           <div className="overview-stats settings-ready">
-            <article className={`overview-stat ${ready.telegram ? "is-ready" : ""}`}>
-              <p className="overview-stat-label">Telegram</p>
-              <p className="overview-stat-value">{ready.telegram ? "Ready" : "Needed"}</p>
-            </article>
-            <article className={`overview-stat ${ready.gemini ? "is-ready" : ""}`}>
-              <p className="overview-stat-label">Gemini</p>
-              <p className="overview-stat-value">{ready.gemini ? "Ready" : "Needed"}</p>
-            </article>
-            <article className={`overview-stat ${ready.facebook ? "is-ready" : ""}`}>
-              <p className="overview-stat-label">Facebook</p>
-              <p className="overview-stat-value">{ready.facebook ? "Ready" : "Optional"}</p>
-            </article>
-            <article className="overview-stat">
-              <p className="overview-stat-label">NotebookLM</p>
-              <p className="overview-stat-value">
-                {notebooklm?.server_authenticated ? "Server OK" : "Server login"}
-              </p>
-            </article>
+            <StatCard
+              label="Telegram"
+              value={ready.telegram ? "Ready" : "Needed"}
+              icon="send"
+              tone={ready.telegram ? "green" : "amber"}
+            />
+            <StatCard
+              label="Gemini"
+              value={ready.gemini ? "Ready" : "Needed"}
+              icon="sparkles"
+              tone={ready.gemini ? "green" : "amber"}
+            />
+            <StatCard
+              label="Facebook"
+              value={ready.facebook ? "Ready" : "Optional"}
+              icon="globe"
+              tone={ready.facebook ? "green" : "blue"}
+            />
+            <StatCard
+              label="NotebookLM"
+              value={notebooklm?.server_authenticated ? "Server OK" : "Server login"}
+              icon="video"
+              tone={notebooklm?.server_authenticated ? "green" : "violet"}
+            />
           </div>
 
           <form className="settings-form" onSubmit={onSubmit}>
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">Telegram</p>
-                  <h2>Bot + your user ID</h2>
-                </div>
-              </div>
-              <p className="panel-note settings-inline-note">
-                Create a bot with @BotFather. Get your numeric ID from @userinfobot. Then
-                open your bot and tap Start so it can message you.
-              </p>
+            <Panel
+              kicker="Telegram"
+              title="Bot + your user ID"
+              subtitle="Create a bot with @BotFather. Get your numeric ID from @userinfobot. Then open your bot and tap Start so it can message you."
+            >
               <div className="settings-grid">
-                <label className="field">
-                  <span>
-                    Bot token{" "}
-                    {status?.telegram_bot_token_set ? "(saved — leave blank to keep)" : ""}
-                  </span>
-                  <input
+                <FormField
+                  label={
+                    <>
+                      Bot token{" "}
+                      {status?.telegram_bot_token_set ? "(saved — leave blank to keep)" : ""}
+                    </>
+                  }
+                >
+                  <Input
                     type="password"
                     autoComplete="off"
                     value={form.telegram_bot_token}
                     onChange={(ev) => setField("telegram_bot_token", ev.target.value)}
                     placeholder="123456:ABC..."
                   />
-                </label>
-                <label className="field">
-                  <span>Your Telegram user ID</span>
-                  <input
+                </FormField>
+                <FormField label="Your Telegram user ID" required>
+                  <Input
                     type="number"
                     required
                     value={form.telegram_user_id}
                     onChange={(ev) => setField("telegram_user_id", ev.target.value)}
                     placeholder="1099911298"
                   />
-                </label>
+                </FormField>
               </div>
               {status?.telegram_bot_token_set ? (
                 <label className="settings-check">
@@ -255,37 +273,33 @@ export default function SettingsPage() {
                   Clear saved bot token
                 </label>
               ) : null}
-            </section>
+            </Panel>
 
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">Gemini</p>
-                  <h2>AI keys</h2>
-                </div>
-              </div>
+            <Panel kicker="Gemini" title="AI keys">
               <div className="settings-grid">
-                <label className="field">
-                  <span>
-                    API keys (comma-separated){" "}
-                    {status?.gemini_api_keys_set ? "(saved — leave blank to keep)" : ""}
-                  </span>
-                  <textarea
+                <FormField
+                  label={
+                    <>
+                      API keys (comma-separated){" "}
+                      {status?.gemini_api_keys_set ? "(saved — leave blank to keep)" : ""}
+                    </>
+                  }
+                >
+                  <Textarea
                     rows={2}
                     value={form.gemini_api_keys}
                     onChange={(ev) => setField("gemini_api_keys", ev.target.value)}
                     placeholder="key_one,key_two"
                   />
-                </label>
-                <label className="field">
-                  <span>Model (optional)</span>
-                  <input
+                </FormField>
+                <FormField label="Model (optional)">
+                  <Input
                     type="text"
                     value={form.gemini_model}
                     onChange={(ev) => setField("gemini_model", ev.target.value)}
                     placeholder="gemini-flash-lite-latest"
                   />
-                </label>
+                </FormField>
               </div>
               {status?.gemini_api_keys_set ? (
                 <label className="settings-check">
@@ -297,20 +311,13 @@ export default function SettingsPage() {
                   Clear saved Gemini keys
                 </label>
               ) : null}
-            </section>
+            </Panel>
 
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">Facebook</p>
-                  <h2>Connect a Page</h2>
-                </div>
-              </div>
-              <p className="panel-note settings-inline-note">
-                Log in with Facebook and choose a Page you manage. No App ID / token paste
-                needed on your side.
-              </p>
-
+            <Panel
+              kicker="Facebook"
+              title="Connect a Page"
+              subtitle="Log in with Facebook and choose a Page you manage. No App ID / token paste needed on your side."
+            >
               {status?.facebook_connected ? (
                 <div className="fb-connected">
                   <p>
@@ -320,34 +327,37 @@ export default function SettingsPage() {
                     ) : null}
                   </p>
                   <div className="hero-actions">
-                    <button
-                      type="button"
-                      className="primary-btn"
+                    <Button
+                      variant="primary"
+                      size="sm"
                       disabled={connectingFb}
+                      loading={connectingFb}
                       onClick={onConnectFacebook}
                     >
-                      {connectingFb ? "Opening Facebook…" : "Reconnect"}
-                    </button>
-                    <button
-                      type="button"
-                      className="ghost-btn"
+                      Reconnect
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
                       disabled={saving}
                       onClick={onDisconnectFacebook}
                     >
                       Disconnect
-                    </button>
+                    </Button>
                   </div>
                 </div>
               ) : (
                 <div className="hero-actions">
-                  <button
-                    type="button"
-                    className="primary-btn"
+                  <Button
+                    variant="primary"
+                    size="sm"
                     disabled={!oauthReady || connectingFb}
+                    loading={connectingFb}
+                    loadingText="Opening Facebook…"
                     onClick={onConnectFacebook}
                   >
-                    {connectingFb ? "Opening Facebook…" : "Continue with Facebook"}
-                  </button>
+                    Continue with Facebook
+                  </Button>
                 </div>
               )}
 
@@ -366,32 +376,29 @@ export default function SettingsPage() {
                   <ul className="fb-page-list">
                     {pendingPages.map((page) => (
                       <li key={page.id}>
-                        <button
-                          type="button"
-                          className="ghost-btn"
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           disabled={saving}
                           onClick={() => onSelectPage(page.id)}
                         >
                           {page.name}
-                        </button>
+                        </Button>
                       </li>
                     ))}
                   </ul>
                 </div>
               ) : null}
-            </section>
+            </Panel>
 
-            <section className="panel">
-              <div className="panel-head">
-                <div>
-                  <p className="panel-kicker">NotebookLM</p>
-                  <h2>Video engine</h2>
-                </div>
-              </div>
-              <p className="jobs-note">
-                {notebooklm?.note ||
-                  "NotebookLM login is shared on the server for now (Google browser cookies)."}
-              </p>
+            <Panel
+              kicker="NotebookLM"
+              title="Video engine"
+              subtitle={
+                notebooklm?.note ||
+                "NotebookLM login is shared on the server for now (Google browser cookies)."
+              }
+            >
               <p className="job-meta">
                 Server auth:{" "}
                 {notebooklm?.server_authenticated ? "authenticated" : "not authenticated"}
@@ -404,13 +411,20 @@ export default function SettingsPage() {
                 />
                 Skip NotebookLM video (caption / Telegram test only)
               </label>
-            </section>
+            </Panel>
 
             <div className="compose-actions">
-              <button type="submit" className="primary-btn" disabled={saving}>
-                <Icon name="check" size={18} />
-                {saving ? "Saving…" : "Save integrations"}
-              </button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                icon="check"
+                disabled={saving}
+                loading={saving}
+                loadingText="Saving…"
+              >
+                Save integrations
+              </Button>
             </div>
           </form>
         </>

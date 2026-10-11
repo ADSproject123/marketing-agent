@@ -6,11 +6,14 @@ export default function SiteFooter() {
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div>
-          <Link className="site-footer-brand-link" to="/" aria-label="Marketing Agent home">
-            <span className="site-logo-mark" aria-hidden="true">
-              <Icon name="sparkles" size={18} />
-            </span>
-            <span className="site-footer-brand">Marketing Agent</span>
+          <Link className="site-footer-brand-link" to="/" aria-label="Rachana AI home">
+            <img
+              src="/assets/logo/logo-horizontal-light.svg"
+              alt="Rachana AI"
+              className="site-footer-logo-img"
+              width="125"
+              height="26"
+            />
           </Link>
           <p className="site-footer-copy">
             From your next big idea to your next great campaign.
@@ -24,7 +27,7 @@ export default function SiteFooter() {
         </nav>
       </div>
       <div className="site-footer-bottom">
-        <span>© {new Date().getFullYear()} Marketing Agent</span>
+        <span>© {new Date().getFullYear()} Rachana AI</span>
         <span>A little less busywork. A lot more creativity.</span>
       </div>
     </footer>

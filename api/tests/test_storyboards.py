@@ -22,6 +22,8 @@ def plan():
     return {
         "language": "en", "title": "Fresh coffee", "caption": "Visit My cafe for fresh local coffee.",
         "business_name": "My cafe", "offer": "", "contact": "Phnom Penh",
+        "telegram_username": "", "endcard_qr_asset_id": None,
+        "bgm_track": "cozy_lofi", "bgm_volume": 0.22,
         "hooks": [{"id": "h1", "text": "Ready for fresh coffee?"},
                   {"id": "h2", "text": "Meet your next coffee stop."},
                   {"id": "h3", "text": "Your fresh coffee starts here."}],

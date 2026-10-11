@@ -14,7 +14,7 @@ from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -34,6 +34,7 @@ from app.jobs.store import JobSource, JobStatus, JobStore
 from app.notebooklm.client import check_auth
 from app.promotions.store import PromotionStore
 from app.runtime import get_runtime
+from app.campaign_ingest import ingest_campaign_url
 from app.storyboards import Storyboard, draft_storyboard, revise_storyboard, validate_storyboard
 from app.uploads import save_job_assets
 
@@ -68,7 +69,7 @@ TEMPLATE_LABELS = {
     "auto_gemini": "Let Gemini invent everything",
 }
 
-app = FastAPI(title="Marketing Agent", docs_url=None, redoc_url=None)
+app = FastAPI(title="Rachana AI", docs_url=None, redoc_url=None)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
@@ -160,6 +161,11 @@ class IntegrationsUpdateRequest(BaseModel):
 
 class FacebookSelectPageRequest(BaseModel):
     page_id: str = Field(min_length=1, max_length=64)
+
+
+class IngestUrlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    url: str = Field(min_length=4, max_length=1000)
 
 
 def _users() -> UserStore:
@@ -311,6 +317,27 @@ def get_promotions(user: dict = Depends(_require_user)) -> dict:
         "ok": True,
         "promotions": [promotion.public() for promotion in _promotions().list_for_account(user["id"])],
     }
+
+
+@app.post("/api/campaign/ingest")
+async def campaign_ingest(body: IngestUrlRequest, user: dict = Depends(_require_user)) -> dict:
+    try:
+        runtime = get_runtime()
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Agent runtime not ready. Start with: python api/run.py",
+        ) from exc
+    resolved = resolve_settings_for_account(user["id"], base=runtime.settings)
+    if not resolved.gemini_api_keys:
+        raise HTTPException(
+            status_code=400,
+            detail="Connect a Gemini API key in Settings before importing from a link.",
+        )
+    try:
+        return await ingest_campaign_url(resolved, body.url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/promotions", status_code=201)
@@ -504,18 +531,155 @@ def facebook_disconnect(user: dict = Depends(_require_user)) -> dict:
 
 
 @app.get("/api/jobs")
-def list_jobs(limit: int = 20, user: dict = Depends(_require_user)) -> dict:
+def list_jobs(
+    limit: int = 20,
+    offset: int = 0,
+    user: dict = Depends(_require_user),
+) -> dict:
     limit = max(1, min(limit, 50))
-    jobs = _store().list_recent_for_account(user["id"], limit=limit)
-    return {"jobs": [_job_payload(j) for j in jobs]}
+    offset = max(0, offset)
+    store = _store()
+    jobs = store.list_recent_for_account(user["id"], limit=limit, offset=offset)
+    total = store.count_for_account(user["id"])
+    return {
+        "jobs": [_job_payload(j) for j in jobs],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def _owned_job(job_id: str, user: dict):
+    job = _store().get(job_id)
+    if not job or job.owner_account_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @app.get("/api/jobs/{job_id}")
 def get_job(job_id: str, user: dict = Depends(_require_user)) -> dict:
-    job = _store().get(job_id)
-    if not job or job.owner_account_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Job not found")
+    job = _owned_job(job_id, user)
     return _job_payload(job)
+
+
+@app.post("/api/jobs/{job_id}/approve")
+async def approve_job(job_id: str, user: dict = Depends(_require_user)) -> dict:
+    job = _owned_job(job_id, user)
+    if job.status != JobStatus.AWAITING_APPROVAL:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {job_id} is not awaiting approval (status: {job.status.value}).",
+        )
+    try:
+        runtime = get_runtime()
+        await runtime.pipeline.approve(job_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Approval failed: {exc}") from exc
+
+    updated = _store().get(job_id)
+    return {
+        "ok": True,
+        "job": _job_payload(updated),
+        "message": "Campaign approved and published.",
+    }
+
+
+@app.post("/api/jobs/{job_id}/deny")
+async def deny_job(job_id: str, user: dict = Depends(_require_user)) -> dict:
+    job = _owned_job(job_id, user)
+    allowed_deny = {JobStatus.AWAITING_APPROVAL, JobStatus.COLLECTING, JobStatus.QUEUED}
+    if job.status not in allowed_deny:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {job_id} cannot be denied (status: {job.status.value}).",
+        )
+    try:
+        runtime = get_runtime()
+        await runtime.pipeline.deny(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Denial failed: {exc}") from exc
+
+    updated = _store().get(job_id)
+    return {
+        "ok": True,
+        "job": _job_payload(updated),
+        "message": "Campaign denied. Nothing was posted.",
+    }
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str, user: dict = Depends(_require_user)) -> dict:
+    job = _owned_job(job_id, user)
+    terminal_statuses = {
+        JobStatus.POSTED,
+        JobStatus.DENIED,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+    }
+    if job.status in terminal_statuses:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Cannot cancel a job in {job.status.value} status.",
+        )
+    try:
+        runtime = get_runtime()
+        runtime.cancel_job(job_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Cancellation failed: {exc}") from exc
+
+    updated = _store().get(job_id)
+    return {
+        "ok": True,
+        "job": _job_payload(updated),
+        "message": "Campaign cancelled.",
+    }
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(
+    job_id: str,
+    request: Request,
+    user: dict = Depends(_require_user),
+) -> StreamingResponse:
+    _owned_job(job_id, user)
+
+    async def event_generator():
+        last_status = None
+        last_updated = None
+        terminal_statuses = {
+            JobStatus.POSTED.value,
+            JobStatus.DENIED.value,
+            JobStatus.FAILED.value,
+            JobStatus.CANCELLED.value,
+        }
+        for _ in range(120):  # Stream for up to ~2 minutes
+            if await request.is_disconnected():
+                break
+            current = _store().get(job_id)
+            if not current:
+                break
+            if current.status.value != last_status or current.updated_at != last_updated:
+                last_status = current.status.value
+                last_updated = current.updated_at
+                payload = json.dumps(_job_payload(current), ensure_ascii=False)
+                yield f"event: job_update\ndata: {payload}\n\n"
+                if current.status.value in terminal_statuses:
+                    break
+            else:
+                yield ": heartbeat\n\n"
+            await asyncio.sleep(1.0)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 async def _parse_create_job_request(
@@ -703,11 +867,7 @@ async def create_campaign_draft(request: Request, user: dict = Depends(_require_
         await request.close()
 
 
-def _owned_job(job_id: str, user: dict):
-    job = _store().get(job_id)
-    if not job or job.owner_account_id != user["id"]:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
+
 
 
 @app.post("/api/jobs/{job_id}/draft")

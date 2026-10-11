@@ -33,11 +33,14 @@ export default function MarketingHeader() {
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <Link className="site-logo" to="/" aria-label="Marketing Agent home" onClick={closeMenu}>
-          <span className="site-logo-mark" aria-hidden="true">
-            <Icon name="sparkles" size={19} />
-          </span>
-          <span className="site-logo-text">Marketing Agent</span>
+        <Link className="site-logo" to="/" aria-label="Rachana AI home" onClick={closeMenu}>
+          <img
+            src="/assets/logo/logo-horizontal-light.svg"
+            alt="Rachana AI"
+            className="site-logo-img"
+            width="152"
+            height="32"
+          />
         </Link>
 
         <button

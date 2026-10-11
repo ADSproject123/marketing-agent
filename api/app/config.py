@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
 from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
+
+DEV_AUTH_SECRET = "marketing-agent-dev-secret-change-me"
+
+
+def validate_production_secrets() -> None:
+    """Ensure production environment does not boot with insecure secrets."""
+    env = (os.getenv("ENVIRONMENT") or os.getenv("APP_ENV") or "development").strip().lower()
+    auth_secret = (os.getenv("AUTH_SECRET") or "").strip()
+    if env == "production":
+        if not auth_secret or auth_secret == DEV_AUTH_SECRET or len(auth_secret) < 32:
+            raise RuntimeError(
+                "CRITICAL SECURITY CONFIGURATION: AUTH_SECRET must be set to a secure string "
+                "(at least 32 characters) in production!"
+            )
+    else:
+        if not auth_secret or auth_secret == DEV_AUTH_SECRET:
+            logger.warning(
+                "SECURITY NOTICE: AUTH_SECRET is not set or is using the development fallback. "
+                "Set a secure AUTH_SECRET before deploying to production."
+            )
+
 
 # api/app/config.py → api/ → project root
 APP_DIR = Path(__file__).resolve().parent
@@ -120,6 +144,7 @@ class Settings:
 
 @lru_cache
 def get_settings() -> Settings:
+    validate_production_secrets()
     settings = Settings(
         telegram_bot_token=_require("TELEGRAM_BOT_TOKEN"),
         allowed_telegram_user_id=int(_require("ALLOWED_TELEGRAM_USER_ID")),

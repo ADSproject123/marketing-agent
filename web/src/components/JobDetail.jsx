@@ -1,21 +1,28 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { redraftStoryboard, retryCampaignDraft } from "../api";
+import { approveJob, cancelJob, denyJob, redraftStoryboard, retryCampaignDraft } from "../api";
 import { formatTime, liveDetailFor, stageForJob, STEPS } from "../flow";
 import Icon from "./Icon";
 import QualityReport from "./QualityReport";
+import { Alert, Button, EmptyState, Panel, StatusBadge } from "./ui";
 import VideoPreview from "./VideoPreview";
 
-function ScriptActions({ job }) {
+function ScriptActions({ job, onRefresh }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
+  const [actionType, setActionType] = useState("");
   const [error, setError] = useState("");
-  const retryScript = job.status === "failed" && !job.storyboard &&
-    ["BUSINESS CAMPAIGN BRIEF", "សេចក្តីសង្ខេបយុទ្ធនាការអាជីវកម្ម"].some((heading) => (job.brief || "").startsWith(heading));
-  if (!job.storyboard && !retryScript) return null;
+  const retryScript =
+    job.status === "failed" &&
+    !job.storyboard &&
+    ["BUSINESS CAMPAIGN BRIEF", "សេចក្តីសង្ខេបយុទ្ធនាការអាជីវកម្ម"].some((heading) =>
+      (job.brief || "").startsWith(heading)
+    );
+
   async function prepareDraft(retry = false) {
     if (busy) return;
     setBusy(true);
+    setActionType(retry ? "retry" : "revise");
     setError("");
     try {
       const response = retry
@@ -25,40 +32,213 @@ function ScriptActions({ job }) {
     } catch (err) {
       setError(err.message || "Could not prepare the script.");
       setBusy(false);
+      setActionType("");
     }
   }
-  if (retryScript) {
-    return <div className="detail-actions"><button type="button" className="primary-btn" disabled={busy} onClick={() => prepareDraft(true)}>{busy ? "Generating script…" : "Retry script"}</button>{error ? <p className="detail-error" role="alert">{error}</p> : null}</div>;
+
+  async function handleApprove() {
+    if (busy) return;
+    setBusy(true);
+    setActionType("approve");
+    setError("");
+    try {
+      await approveJob(job.id);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setError(err.message || "Could not approve campaign.");
+    } finally {
+      setBusy(false);
+      setActionType("");
+    }
   }
-  if (["script_review", "failed"].includes(job.status)) {
-    return <div className="detail-actions"><Link className="primary-btn" to={`/dashboard/compose?draft=${encodeURIComponent(job.id)}`}>Review script</Link></div>;
+
+  async function handleDeny() {
+    if (busy) return;
+    setBusy(true);
+    setActionType("deny");
+    setError("");
+    try {
+      await denyJob(job.id);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setError(err.message || "Could not deny campaign.");
+    } finally {
+      setBusy(false);
+      setActionType("");
+    }
   }
-  if (!["awaiting_approval", "posted", "denied", "cancelled"].includes(job.status)) return null;
+
+  async function handleCancel() {
+    if (busy) return;
+    setBusy(true);
+    setActionType("cancel");
+    setError("");
+    try {
+      await cancelJob(job.id);
+      if (onRefresh) onRefresh();
+    } catch (err) {
+      setError(err.message || "Could not cancel campaign.");
+    } finally {
+      setBusy(false);
+      setActionType("");
+    }
+  }
+
+  function handleDuplicate() {
+    try {
+      localStorage.setItem(
+        "ma_campaign_clone",
+        JSON.stringify({
+          brief: job.brief || "",
+          language: job.language || "en",
+        })
+      );
+    } catch {
+      // Ignore localStorage errors
+    }
+    navigate("/dashboard/compose?clone=true");
+  }
+
+  let actions = null;
+
+  if (job.status === "awaiting_approval") {
+    actions = (
+      <>
+        <Button
+          variant="primary"
+          size="sm"
+          icon="check"
+          loading={busy && actionType === "approve"}
+          loadingText="Publishing…"
+          disabled={busy}
+          onClick={handleApprove}
+        >
+          Approve & Publish
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
+          loading={busy && actionType === "deny"}
+          disabled={busy}
+          onClick={handleDeny}
+        >
+          Deny
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          loading={busy && actionType === "revise"}
+          disabled={busy}
+          onClick={() => prepareDraft()}
+        >
+          Revise video
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleDuplicate}>
+          Duplicate
+        </Button>
+      </>
+    );
+  } else if (["queued", "generating"].includes(job.status)) {
+    actions = (
+      <Button
+        variant="ghost"
+        size="sm"
+        icon="x"
+        loading={busy && actionType === "cancel"}
+        loadingText="Cancelling…"
+        disabled={busy}
+        onClick={handleCancel}
+      >
+        Cancel campaign
+      </Button>
+    );
+  } else if (retryScript) {
+    actions = (
+      <>
+        <Button
+          variant="primary"
+          size="sm"
+          loading={busy && actionType === "retry"}
+          loadingText="Generating script…"
+          disabled={busy}
+          onClick={() => prepareDraft(true)}
+        >
+          Retry script
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleDuplicate}>
+          Duplicate
+        </Button>
+      </>
+    );
+  } else if (["script_review", "failed"].includes(job.status)) {
+    actions = (
+      <>
+        <Button
+          to={`/dashboard/compose?draft=${encodeURIComponent(job.id)}`}
+          variant="primary"
+          size="sm"
+        >
+          Review script
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleDuplicate}>
+          Duplicate
+        </Button>
+      </>
+    );
+  } else if (["posted", "denied", "cancelled"].includes(job.status)) {
+    actions = (
+      <>
+        <Button
+          variant="ghost"
+          size="sm"
+          loading={busy && actionType === "revise"}
+          loadingText="Preparing revision…"
+          disabled={busy}
+          onClick={() => prepareDraft()}
+        >
+          Revise video
+        </Button>
+        <Button variant="ghost" size="sm" onClick={handleDuplicate}>
+          Duplicate
+        </Button>
+      </>
+    );
+  }
+
+  if (!actions && !error) return null;
+
   return (
-    <div className="detail-actions">
-      <button type="button" className="ghost-btn" disabled={busy} onClick={() => prepareDraft()}>{busy ? "Preparing revision…" : "Revise video"}</button>
-      {error ? <p className="detail-error" role="alert">{error}</p> : null}
+    <div className="detail-actions-wrap">
+      {actions ? <div className="detail-actions">{actions}</div> : null}
+      {error ? (
+        <Alert tone="danger" size="sm" className="detail-actions-error">
+          {error}
+        </Alert>
+      ) : null}
     </div>
   );
 }
 
-export default function JobDetail({ job }) {
+export default function JobDetail({ job, onRefresh }) {
   if (!job) {
     return (
-      <section className="panel job-detail" aria-labelledby="detail-title">
-        <div className="panel-head">
-          <div>
-            <p className="panel-kicker">Campaign details</p>
-            <h2 id="detail-title">A closer look</h2>
-          </div>
-        </div>
-        <div className="empty-state empty-panel">
-          <span className="empty-state-icon"><Icon name="file" size={24} /></span>
-          <h3 className="empty-state-title">Every detail, in one place</h3>
-          <p className="empty-state-text">Select a campaign to view its progress, generated caption, and publishing details.</p>
-          <Link className="text-link" to="/dashboard/compose">Create a campaign <Icon name="arrow-right" size={15} /></Link>
-        </div>
-      </section>
+      <Panel
+        kicker="Campaign details"
+        title="A closer look"
+        className="job-detail"
+        aria-labelledby="detail-title"
+      >
+        <EmptyState
+          icon="file"
+          title="Every detail, in one place"
+          description="Select a campaign to view its progress, generated caption, and publishing details."
+          action={
+            <Button to="/dashboard/compose" variant="ghost" size="sm" icon="plus">
+              Create a campaign
+            </Button>
+          }
+        />
+      </Panel>
     );
   }
 
@@ -67,18 +247,14 @@ export default function JobDetail({ job }) {
   const stageDetail = stage ? liveDetailFor(job, stage) : "";
 
   return (
-    <section className="panel job-detail" aria-labelledby="detail-title">
-      <div className="panel-head">
-        <div>
-          <p className="panel-kicker">Campaign details</p>
-          <h2 id="detail-title">{job.title || job.brief || "Untitled campaign"}</h2>
-        </div>
-        <span className={`job-status is-${job.status}`}>
-          {job.status.replaceAll("_", " ")}
-        </span>
-      </div>
-
-      <ScriptActions key={job.id} job={job} />
+    <Panel
+      kicker="Campaign details"
+      title={job.title || job.brief || "Untitled campaign"}
+      action={<StatusBadge status={job.status} size="md" />}
+      className="job-detail"
+      aria-labelledby="detail-title"
+    >
+      <ScriptActions key={job.id} job={job} onRefresh={onRefresh} />
       <dl className="detail-grid">
         <div>
           <dt>Campaign ID</dt>
@@ -101,7 +277,9 @@ export default function JobDetail({ job }) {
         </div>
         {job.caption ? (
           <div className="detail-span">
-            <dt className="detail-caption-head"><Icon name="file" size={15} /> Social post caption</dt>
+            <dt className="detail-caption-head">
+              <Icon name="file" size={15} /> Social post caption
+            </dt>
             <dd className="detail-caption">{job.caption}</dd>
           </div>
         ) : null}
@@ -109,7 +287,9 @@ export default function JobDetail({ job }) {
           <div className="detail-span">
             <dt>Generated video</dt>
             <dd>
-              <span className="detail-preview"><Icon name="circle-check" size={18} /> Video generated</span>
+              <span className="detail-preview">
+                <Icon name="circle-check" size={18} /> Video generated
+              </span>
               <VideoPreview key={job.id} job={job} />
             </dd>
           </div>
@@ -127,11 +307,13 @@ export default function JobDetail({ job }) {
         {job.error ? (
           <div className="detail-span">
             <dt>Needs attention</dt>
-            <dd className="detail-error" role="alert">{job.error}</dd>
+            <dd>
+              <Alert tone="danger">{job.error}</Alert>
+            </dd>
           </div>
         ) : null}
       </dl>
       <QualityReport report={job.quality_report} />
-    </section>
+    </Panel>
   );
 }

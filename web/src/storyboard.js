@@ -63,6 +63,13 @@ export function validateStoryboard(storyboard) {
   });
   const duration = storyboardDuration(storyboard);
   if (duration < 10 || duration > 60) errors.duration = "Keep the full video between 10 and 60 seconds.";
+  const bgm = storyboard.bgm_track || "none";
+  const allowedBgm = ["none", "upbeat_commercial", "cozy_lofi", "energetic_trend", "acoustic_warmth"];
+  if (!allowedBgm.includes(bgm)) errors.bgm_track = "Choose a background music track.";
+  const volume = Number(storyboard.bgm_volume ?? 0.22);
+  if (bgm !== "none" && (!Number.isFinite(volume) || volume < 0.05 || volume > 0.5)) {
+    errors.bgm_volume = "Keep music volume between 5% and 50%.";
+  }
   return errors;
 }
 

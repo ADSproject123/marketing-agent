@@ -75,8 +75,8 @@ export async function fetchMe() {
   return api("/api/auth/me");
 }
 
-export async function fetchJobs(limit = 20) {
-  return api(`/api/jobs?limit=${limit}`);
+export async function fetchJobs(limit = 20, offset = 0) {
+  return api(`/api/jobs?limit=${limit}&offset=${offset}`);
 }
 
 export async function fetchJob(id) {
@@ -91,6 +91,13 @@ export async function createPromotion({ kind, name, description, benefit = "", l
   return api("/api/promotions", {
     method: "POST",
     body: { kind, name, description, benefit, location, website },
+  });
+}
+
+export async function ingestCampaignUrl(url) {
+  return api("/api/campaign/ingest", {
+    method: "POST",
+    body: { url },
   });
 }
 
@@ -175,6 +182,24 @@ export function retryCampaignDraft(id, updatedAt) {
   return api(`/api/jobs/${encodeURIComponent(id)}/draft`, {
     method: "POST",
     body: { expected_updated_at: updatedAt },
+  });
+}
+
+export function approveJob(id) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/approve`, {
+    method: "POST",
+  });
+}
+
+export function denyJob(id) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/deny`, {
+    method: "POST",
+  });
+}
+
+export function cancelJob(id) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
   });
 }
 

@@ -1,4 +1,4 @@
-# Marketing Agent API
+# Rachana AI API
 
 FastAPI backend + Telegram approval gate.
 

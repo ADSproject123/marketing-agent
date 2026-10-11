@@ -63,6 +63,7 @@ test("every maximum-size answer fits both API prompt limits in each language", (
     .filter(([field]) => !["website", "urls"].includes(field))
     .map(([field, limit]) => [field, "ក".repeat(limit)]));
   details.website = "https://lotus.example/" + "a".repeat(470);
+  details.telegramUsername = "a".repeat(CAMPAIGN_FIELD_LIMITS.telegramUsername);
   for (const language of ["en", "km"]) {
     const request = buildCampaignRequest(completeDraft({ ...details, language, templateId: "weekend_sale" }));
     assert.ok(request.brief.length <= 4000);

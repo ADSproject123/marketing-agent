@@ -27,6 +27,7 @@ const paths = {
   bolt: <path d="m13 2-9 12h7l-1 8 10-13h-7l1-7Z" />,
   "circle-check": <><circle cx="12" cy="12" r="9" /><path d="m7 12 3 3 7-7" /></>,
   alert: <><path d="m12 3 10 18H2L12 3ZM12 9v4M12 17h.01" /></>,
+  volume: <><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /></>,
   more: <><circle cx="5" cy="12" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /></>,
 };
 

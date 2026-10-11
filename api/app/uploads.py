@@ -51,7 +51,7 @@ async def save_job_assets(
     job_id: str,
     uploads: list[UploadFile],
 ) -> list[JobSource]:
-    """Persist uploaded brand images and return file JobSources."""
+    """Persist uploaded brand images in chunks and return file JobSources."""
     if not uploads:
         return []
     if len(uploads) > MAX_ASSETS:
@@ -63,14 +63,30 @@ async def save_job_assets(
     job_dir = uploads_dir / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     sources: list[JobSource] = []
+    chunk_size = 64 * 1024  # 64 KB
 
     for index, upload in enumerate(uploads):
+        filename = _safe_filename(upload.filename or "", index)
+        path = job_dir / filename
+        total_size = 0
         try:
-            data = await upload.read()
-            validate_asset_file(upload, index=index, size=len(data))
-            filename = _safe_filename(upload.filename or "", index)
-            path = job_dir / filename
-            path.write_bytes(data)
+            with path.open("wb") as out_file:
+                while True:
+                    chunk = await upload.read(chunk_size)
+                    if not chunk:
+                        break
+                    total_size += len(chunk)
+                    if total_size > MAX_ASSET_BYTES:
+                        break
+                    out_file.write(chunk)
+
+            try:
+                validate_asset_file(upload, index=index, size=total_size)
+            except Exception:
+                if path.exists():
+                    path.unlink(missing_ok=True)
+                raise
+
             title = Path(upload.filename or filename).name[:120] or filename
             sources.append(
                 JobSource(kind="file", value=str(path.resolve()), title=title)

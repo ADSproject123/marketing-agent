@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { fetchPrivateMedia } from "../api";
 import { selectStoryboardHook, storyboardDuration, updateStoryboardHook, updateStoryboardScene } from "../storyboard";
 import Icon from "./Icon";
+import { Badge, Button } from "./ui";
 
 const REVISIONS = [
   ["stronger_hook", "Stronger opening", "Try three more compelling hooks"],
@@ -44,6 +45,36 @@ export default function StoryboardEditor({ job, storyboard, errors = {}, busy = 
     return () => { controller.abort(); urls.forEach((url) => URL.revokeObjectURL(url)); };
   }, [job.id, job.assets]);
 
+  const [playingSceneId, setPlayingSceneId] = useState(null);
+
+  const moveScene = (index, delta) => {
+    const target = index + delta;
+    if (target < 1 || target >= storyboard.scenes.length) return;
+    const next = [...storyboard.scenes];
+    const item = next[index];
+    next[index] = next[target];
+    next[target] = item;
+    onChange({ ...storyboard, scenes: next });
+  };
+
+  const playNarration = (sceneId, text) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window) || !text) return;
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+      if (playingSceneId === sceneId) {
+        setPlayingSceneId(null);
+        return;
+      }
+    }
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.lang = storyboard.language === "km" ? "km-KH" : "en-US";
+    utterance.rate = 0.95;
+    utterance.onend = () => setPlayingSceneId(null);
+    utterance.onerror = () => setPlayingSceneId(null);
+    setPlayingSceneId(sceneId);
+    window.speechSynthesis.speak(utterance);
+  };
+
   const addScene = () => {
     onChange({ ...storyboard, scenes: [...storyboard.scenes, { id: crypto.randomUUID(), duration_seconds: 4, narration: "", on_screen_text: "", visual_direction: "", asset_id: null }] });
   };
@@ -52,7 +83,11 @@ export default function StoryboardEditor({ job, storyboard, errors = {}, busy = 
     <section className="panel storyboard-editor" aria-labelledby="script-title">
       <header className="storyboard-head">
         <div><p className="panel-kicker">Script review</p><h2 id="script-title" ref={headingRef} tabIndex={-1}>Shape your video</h2><p>Choose an opening, then edit the words and visuals before generating.</p></div>
-        <div className="storyboard-badges"><span>{storyboard.language === "km" ? "ខ្មែរ · Khmer" : "English"}</span><span className={duration < 10 || duration > 60 ? "is-invalid" : ""}>{Number(duration.toFixed(1))} seconds</span><span>9:16 vertical</span></div>
+        <div className="storyboard-badges">
+          <Badge variant="neutral" size="sm">{storyboard.language === "km" ? "ខ្មែរ · Khmer" : "English"}</Badge>
+          <Badge variant={duration < 10 || duration > 60 ? "danger" : "neutral"} size="sm">{Number(duration.toFixed(1))}s</Badge>
+          <Badge variant="neutral" size="sm">9:16 vertical</Badge>
+        </div>
       </header>
 
       <form className="storyboard-form" onSubmit={(event) => { event.preventDefault(); onAction("render"); }}>
@@ -81,10 +116,59 @@ export default function StoryboardEditor({ job, storyboard, errors = {}, busy = 
                 const asset = assets.find((item) => item.id === scene.asset_id);
                 return (
                   <section key={scene.id} className="storyboard-scene" aria-labelledby={`scene-title-${scene.id}`}>
-                    <div className="storyboard-scene-head"><span className="storyboard-scene-number">{index + 1}</span><div><h4 id={`scene-title-${scene.id}`}>{index === 0 ? "Opening hook" : index === storyboard.scenes.length - 1 ? "Closing action" : `Scene ${index + 1}`}</h4><span>{Number(from.toFixed(1))}–{Number((from + (Number(scene.duration_seconds) || 0)).toFixed(1))}s</span></div><label className="storyboard-duration">Duration<input type="number" min={index === 0 ? 2 : 1} max={index === 0 ? 5 : 20} step="0.5" value={scene.duration_seconds} onChange={(event) => sceneChange(scene.id, "duration_seconds", event.target.value)} aria-label={`Scene ${index + 1} duration in seconds`} {...inputProps(`${prefix}duration_seconds`)} /><span>sec</span></label>{index > 0 && storyboard.scenes.length > 3 ? <button type="button" className="storyboard-remove" onClick={() => onChange({ ...storyboard, scenes: storyboard.scenes.filter((item) => item.id !== scene.id) })} aria-label={`Remove scene ${index + 1}`}><Icon name="x" size={16} /></button> : null}</div>
+                    <div className="storyboard-scene-head">
+                      <span className="storyboard-scene-number">{index + 1}</span>
+                      <div>
+                        <h4 id={`scene-title-${scene.id}`}>{index === 0 ? "Opening hook" : index === storyboard.scenes.length - 1 ? "Closing action" : `Scene ${index + 1}`}</h4>
+                        <span>{Number(from.toFixed(1))}–{Number((from + (Number(scene.duration_seconds) || 0)).toFixed(1))}s</span>
+                      </div>
+                      <div className="storyboard-scene-actions">
+                        {index > 1 ? (
+                          <button
+                            type="button"
+                            className="storyboard-reorder-btn"
+                            onClick={() => moveScene(index, -1)}
+                            title="Move scene up"
+                            aria-label={`Move scene ${index + 1} up`}
+                          >
+                            ↑
+                          </button>
+                        ) : null}
+                        {index > 0 && index < storyboard.scenes.length - 1 ? (
+                          <button
+                            type="button"
+                            className="storyboard-reorder-btn"
+                            onClick={() => moveScene(index, 1)}
+                            title="Move scene down"
+                            aria-label={`Move scene ${index + 1} down`}
+                          >
+                            ↓
+                          </button>
+                        ) : null}
+                      </div>
+                      <label className="storyboard-duration">Duration<input type="number" min={index === 0 ? 2 : 1} max={index === 0 ? 5 : 20} step="0.5" value={scene.duration_seconds} onChange={(event) => sceneChange(scene.id, "duration_seconds", event.target.value)} aria-label={`Scene ${index + 1} duration in seconds`} {...inputProps(`${prefix}duration_seconds`)} /><span>sec</span></label>
+                      {index > 0 && storyboard.scenes.length > 3 ? <button type="button" className="storyboard-remove" onClick={() => onChange({ ...storyboard, scenes: storyboard.scenes.filter((item) => item.id !== scene.id) })} aria-label={`Remove scene ${index + 1}`}><Icon name="x" size={16} /></button> : null}
+                    </div>
                     {error(`${prefix}duration_seconds`)}
                     <div className="storyboard-scene-grid">
-                      <label className="field">Narration<textarea aria-label={`Scene ${index + 1} narration`} rows={3} maxLength={600} value={scene.narration} onChange={(event) => sceneChange(scene.id, "narration", event.target.value)} {...inputProps(`${prefix}narration`)} />{error(`${prefix}narration`)}</label>
+                      <label className="field">
+                        <div className="field-label-row">
+                          <span>Narration</span>
+                          {scene.narration?.trim() ? (
+                            <button
+                              type="button"
+                              className="storyboard-tts-btn"
+                              onClick={() => playNarration(scene.id, scene.narration)}
+                              title="Listen to spoken narration preview"
+                            >
+                              <Icon name="volume" size={13} />
+                              {playingSceneId === scene.id ? "Stop" : "Listen"}
+                            </button>
+                          ) : null}
+                        </div>
+                        <textarea aria-label={`Scene ${index + 1} narration`} rows={3} maxLength={600} value={scene.narration} onChange={(event) => sceneChange(scene.id, "narration", event.target.value)} {...inputProps(`${prefix}narration`)} />
+                        {error(`${prefix}narration`)}
+                      </label>
                       <label className="field">On-screen text<textarea aria-label={`Scene ${index + 1} on-screen text`} rows={3} maxLength={300} value={scene.on_screen_text || ""} onChange={(event) => sceneChange(scene.id, "on_screen_text", event.target.value)} placeholder="A short headline or key benefit" {...inputProps(`${prefix}on_screen_text`)} />{error(`${prefix}on_screen_text`)}</label>
                       <label className="field">Visual direction<textarea aria-label={`Scene ${index + 1} visual direction`} rows={2} maxLength={600} value={scene.visual_direction} onChange={(event) => sceneChange(scene.id, "visual_direction", event.target.value)} {...inputProps(`${prefix}visual_direction`)} />{error(`${prefix}visual_direction`)}</label>
                       <div className="storyboard-asset-field"><label className="field" htmlFor={`scene-asset-${scene.id}`}>Photo or logo<select id={`scene-asset-${scene.id}`} value={scene.asset_id || ""} onChange={(event) => sceneChange(scene.id, "asset_id", event.target.value || null)}><option value="">Let the video choose visuals</option>{assets.map((item) => <option key={item.id} value={item.id}>{item.title || item.name}</option>)}</select></label>{asset ? <div className="storyboard-asset-preview">{previews[asset.id] ? <img src={previews[asset.id]} alt={asset.title || asset.name || "Selected campaign image"} /> : <span><Icon name="file" size={20} /></span>}<p>{asset.title || asset.name}</p></div> : <p className="storyboard-field-note">{assets.length ? "Choose one of your uploaded images for this scene." : "No images were uploaded for this campaign."}</p>}</div>
@@ -99,20 +183,117 @@ export default function StoryboardEditor({ job, storyboard, errors = {}, busy = 
 
           <section className="storyboard-section">
             <div className="storyboard-section-head"><div><h3>Campaign details</h3><p>Your business facts come from the campaign setup.</p></div></div>
-            <dl className="storyboard-facts"><div><dt>Business</dt><dd>{storyboard.business_name || "—"}</dd></div>{storyboard.offer ? <div><dt>Offer</dt><dd>{storyboard.offer}</dd></div> : null}{storyboard.contact ? <div><dt>Contact or destination</dt><dd>{storyboard.contact}</dd></div> : null}</dl>
+            <dl className="storyboard-facts">
+              <div><dt>Business</dt><dd>{storyboard.business_name || "—"}</dd></div>
+              {storyboard.offer ? <div><dt>Offer</dt><dd>{storyboard.offer}</dd></div> : null}
+              {storyboard.contact ? <div><dt>Contact or destination</dt><dd>{storyboard.contact}</dd></div> : null}
+              {storyboard.telegram_username ? <div><dt>Telegram</dt><dd>@{storyboard.telegram_username}</dd></div> : null}
+              {storyboard.endcard_qr_asset_id != null && storyboard.endcard_qr_asset_id !== "" ? <div><dt>End-card QR</dt><dd>KHQR image selected</dd></div> : null}
+            </dl>
             <div className="storyboard-scene-grid">
               <label className="field storyboard-span">Campaign title<input value={storyboard.title} maxLength={60} onChange={(event) => change("title", event.target.value)} {...inputProps("title")} />{error("title")}</label>
               <label className="field storyboard-span">Social caption<textarea aria-label="Social caption" rows={3} value={storyboard.caption} maxLength={1000} onChange={(event) => change("caption", event.target.value)} {...inputProps("caption")} />{error("caption")}<span className="storyboard-field-note">This is the post’s caption. Video subtitles use the scene narration above.</span></label>
+              <label className="field storyboard-bgm-field">
+                <span>Background music</span>
+                <select
+                  value={storyboard.bgm_track || "cozy_lofi"}
+                  onChange={(event) => change("bgm_track", event.target.value)}
+                  {...inputProps("bgm_track")}
+                >
+                  <option value="none">No music</option>
+                  <option value="upbeat_commercial">Upbeat Commercial</option>
+                  <option value="cozy_lofi">Cozy Lo-Fi (Café / Casual)</option>
+                  <option value="energetic_trend">Energetic Trend</option>
+                  <option value="acoustic_warmth">Acoustic Warmth</option>
+                </select>
+                {error("bgm_track")}
+                <span className="storyboard-field-note">Music automatically ducks under narration.</span>
+              </label>
+              {(storyboard.bgm_track || "cozy_lofi") !== "none" ? (
+                <label className="field">
+                  <span>Music volume</span>
+                  <input
+                    type="range"
+                    min={0.05}
+                    max={0.5}
+                    step={0.01}
+                    value={Number(storyboard.bgm_volume ?? 0.22)}
+                    onChange={(event) => change("bgm_volume", Number(event.target.value))}
+                    aria-label="Background music volume"
+                    {...inputProps("bgm_volume")}
+                  />
+                  <span className="storyboard-field-note">{Math.round(Number(storyboard.bgm_volume ?? 0.22) * 100)}%</span>
+                  {error("bgm_volume")}
+                </label>
+              ) : null}
             </div>
           </section>
 
-          <section className="storyboard-revisions" aria-label="Focused revisions"><div><h3>Want another direction?</h3><p>Revise one part while keeping your campaign setup.</p></div><div>{REVISIONS.map(([action, label, detail]) => <button key={action} type="button" className="ghost-btn" onClick={() => onAction(action)} title={detail}><Icon name="sparkles" size={14} />{busy === action ? "Revising…" : label}</button>)}</div></section>
+          <section className="storyboard-revisions" aria-label="Focused revisions">
+            <div>
+              <h3>Want another direction?</h3>
+              <p>Revise one part while keeping your campaign setup.</p>
+            </div>
+            <div>
+              {REVISIONS.map(([action, label, detail]) => (
+                <Button
+                  key={action}
+                  variant="ghost"
+                  size="xs"
+                  icon="sparkles"
+                  loading={busy === action}
+                  loadingText="Revising…"
+                  onClick={() => onAction(action)}
+                  title={detail}
+                >
+                  {label}
+                </Button>
+              ))}
+            </div>
+          </section>
         </fieldset>
 
-        <div className="storyboard-review-note"><Icon name="shield" size={16} /><p>Scene timings guide generation. Review the finished voiceover, subtitles and business details in the video preview before publishing.</p></div>
+        <div className="storyboard-review-note">
+          <Icon name="shield" size={16} />
+          <p>Scene timings guide generation. Review the finished voiceover, subtitles and business details in the video preview before publishing.</p>
+        </div>
         <footer className="storyboard-actions">
-          <div className="storyboard-save-state"><span className={dirty ? "is-dirty" : ""}>{dirty ? "Unsaved changes" : "Draft saved"}</span><button type="button" className="campaign-edit-btn" onClick={onReload} disabled={locked}>Reload saved script</button>{onBack ? <button type="button" className="campaign-edit-btn" onClick={onBack} disabled={locked}>Campaign setup</button> : null}</div>
-          <div><button type="button" className="ghost-btn" onClick={() => onAction("save")} disabled={locked}>{busy === "save" ? "Saving…" : "Save draft"}</button><button type="submit" className="primary-btn" disabled={locked}><Icon name="sparkles" size={16} />{busy === "render" ? "Starting video…" : "Generate video"}</button></div>
+          <div className="storyboard-save-state">
+            <Badge variant={dirty ? "warning" : "success"} size="sm" dot>
+              {dirty ? "Unsaved changes" : "Draft saved"}
+            </Badge>
+            <Button variant="ghost" size="xs" onClick={onReload} disabled={locked}>
+              Reload saved script
+            </Button>
+            {onBack ? (
+              <Button variant="ghost" size="xs" onClick={onBack} disabled={locked}>
+                Campaign setup
+              </Button>
+            ) : null}
+          </div>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onAction("save")}
+              disabled={locked}
+              loading={busy === "save"}
+              loadingText="Saving…"
+            >
+              Save draft
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              size="sm"
+              icon="sparkles"
+              disabled={locked}
+              loading={busy === "render"}
+              loadingText="Starting video…"
+            >
+              Generate video
+            </Button>
+          </div>
         </footer>
         {status ? <p className={`compose-status ${statusClass}`} role={statusClass === "is-err" ? "alert" : "status"}>{status}</p> : null}
       </form>

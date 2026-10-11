@@ -110,11 +110,17 @@ class JobStore:
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.execute("PRAGMA journal_mode = WAL;")
+        conn.execute("PRAGMA busy_timeout = 30000;")
+        conn.execute("PRAGMA synchronous = NORMAL;")
         conn.row_factory = sqlite3.Row
         try:
             yield conn
             conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
         finally:
             conn.close()
 
@@ -249,16 +255,43 @@ class JobStore:
             )
             return [Job.from_row(r) for r in cur.fetchall()]
 
-    def list_recent_for_account(self, owner_account_id: str, limit: int = 20) -> list[Job]:
+    def list_recent_for_account(
+        self, owner_account_id: str, limit: int = 20, offset: int = 0
+    ) -> list[Job]:
         with self._connect() as conn:
             cur = conn.execute(
                 """
                 SELECT * FROM jobs
                 WHERE owner_account_id = ?
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT ? OFFSET ?
                 """,
-                (owner_account_id, limit),
+                (owner_account_id, limit, offset),
+            )
+            return [Job.from_row(r) for r in cur.fetchall()]
+
+    def count_for_account(self, owner_account_id: str) -> int:
+        with self._connect() as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE owner_account_id = ?",
+                (owner_account_id,),
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row else 0
+
+    def list_by_statuses(self, statuses: list[JobStatus] | tuple[JobStatus, ...]) -> list[Job]:
+        if not statuses:
+            return []
+        placeholders = ",".join("?" for _ in statuses)
+        vals = [s.value if isinstance(s, JobStatus) else str(s) for s in statuses]
+        with self._connect() as conn:
+            cur = conn.execute(
+                f"""
+                SELECT * FROM jobs
+                WHERE status IN ({placeholders})
+                ORDER BY created_at DESC
+                """,
+                vals,
             )
             return [Job.from_row(r) for r in cur.fetchall()]
 

@@ -14,7 +14,8 @@ from PIL import Image
 
 from app.jobs.store import JobSource
 from app.video_finishing import (
-    HEIGHT, WIDTH, VideoFinishingError, _TextRenderer, _clusters, _quality_report, finish_video,
+    HEIGHT, WIDTH, VideoFinishingError, _TextRenderer, _clusters, _is_logo_like,
+    _quality_report, _scene_boundary_times, _scene_overlay, finish_video,
     narration_cues, probe_video, write_narration_srt,
 )
 
@@ -180,20 +181,81 @@ class SyntheticVideoFinishingTests(unittest.TestCase):
     @unittest.skipUnless(_tool("pango-view"), "Pango text shaper not installed")
     def test_khmer_and_exact_selected_photo_are_actually_composed(self):
         original = self._video()
+        # Large product photo (not logo-like) so finishing uses a contained card.
         asset = self.root / "brand's (real) photo.png"
-        Image.new("RGB", (90, 70), (240, 20, 20)).save(asset)
+        Image.new("RGB", (900, 700), (240, 20, 20)).save(asset)
         plan = _plan("km")
         plan["scenes"][0]["asset_id"] = "0"
         finished, report = finish_video(original, plan, [JobSource(kind="file", value=str(asset))])
         self.assertEqual(report["metadata"]["text_renderer"], "pango")
         self.assertIn("កាហ្វេ", Path(report["subtitles_path"]).read_text())
         frame = self._frame(finished, .5)
-        pixel = frame.getpixel((360, 350))
+        pixel = frame.getpixel((360, 280))
         self.assertGreater(pixel[0], 210)
         self.assertLess(pixel[1], 45)
         # Khmer caption glyphs occupy the burned-in caption region.
         pixels = list(frame.crop((42, 910, 678, 1160)).get_flattened_data())
         self.assertGreater(sum(min(pixel) > 175 for pixel in pixels), 200)
+
+    def test_logo_is_watermark_not_giant_card_and_mid_banner_is_skipped(self):
+        original = self._video()
+        logo = self.root / "kiaros-logo.png"
+        # Opaque green mark with transparent surround — logo-like by alpha ratio.
+        mark = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
+        for x in range(40, 216):
+            for y in range(40, 216):
+                mark.putpixel((x, y), (20, 180, 60, 255))
+        mark.save(logo)
+        self.assertTrue(_is_logo_like(logo, mark))
+        plan = _plan()
+        plan["scenes"][0]["asset_id"] = "0"
+        plan["scenes"][0]["on_screen_text"] = "UNIQUE_BANNER_TEXT_XYZ"
+        plan["scenes"][1]["asset_id"] = "0"
+        finished, _ = finish_video(original, plan, [JobSource(kind="file", value=str(logo))])
+        mid = self._frame(finished, 2.4)  # scene 1, before closing card
+        # Mid-frame must not contain a giant white product card (old 76–644 x 182–550).
+        center_card = mid.crop((100, 220, 620, 520))
+        whiteish = sum(min(p) > 230 for p in center_card.get_flattened_data())
+        self.assertLess(whiteish, 8000)
+        # Watermark lives in the top-left corner.
+        corner = mid.crop((36, 48, 180, 180))
+        greenish = sum(p[1] > 120 and p[0] < 80 for p in corner.get_flattened_data())
+        self.assertGreater(greenish, 200)
+        # on_screen_text banners are no longer burned mid-scene.
+        with tempfile.TemporaryDirectory() as temporary:
+            renderer = _TextRenderer(Path(temporary), "en")
+            cue = narration_cues(plan, 4)[0]
+            overlay = _scene_overlay(
+                plan["scenes"][0], cue, plan, renderer,
+                [logo], closing=False, opening=True,
+            )
+            # Opening must not burn mid-scene on_screen_text banners.
+            # Raster check: unique banner phrase must not appear as a large mid-band box.
+            mid_band = overlay.crop((44, 500, WIDTH - 44, 760))
+            opaque = sum(p[3] > 200 for p in mid_band.get_flattened_data())
+            self.assertLess(opaque, 5000)
+
+    def test_soft_cuts_and_audio_polish_metadata_are_reported(self):
+        original = self._video()
+        plan = _plan()
+        plan["bgm_track"] = "cozy_lofi"
+        plan["bgm_volume"] = 0.22
+        plan["telegram_username"] = "kiaroscoffee"
+        cues = narration_cues(plan, 4)
+        boundaries = _scene_boundary_times(cues, closing_start=max(0, 4 - min(3, 4 * .3)))
+        self.assertGreaterEqual(len(boundaries), 1)
+        finished, report = finish_video(original, plan, [])
+        self.assertTrue(finished.is_file())
+        metadata = report["metadata"]
+        self.assertGreaterEqual(metadata.get("soft_cut_count", 0), 1)
+        polish = metadata.get("audio_polish") or {}
+        self.assertTrue(polish.get("bgm"))
+        self.assertIn("hook_whoosh", polish.get("sfx") or [])
+        self.assertIn("end_sting", polish.get("sfx") or [])
+        checks = {check["id"]: check for check in report["checks"]}
+        self.assertEqual(checks["audio_polish"]["status"], "pass")
+        self.assertIn("soft-cuts", checks["audio_polish"]["detail"])
+        self.assertIn("SFX", checks["bgm"]["detail"])
 
     def test_missing_audio_is_reported_and_unknown_asset_is_rejected(self):
         original = self._video(audio=False)

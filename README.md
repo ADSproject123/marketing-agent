@@ -1,6 +1,6 @@
-# Marketing Agent
+# Rachana AI
 
-Marketing agent where the **system starts the job** and **Telegram only approves or denies**:
+Rachana AI workspace where the **system starts the job** and **Telegram only approves or denies**:
 
 1. Save a business, product or service, then answer the guided campaign questions in English or Khmer.
 2. Generate a script, choose one of three hooks, and edit the timed scenes, narration, headings and photos.

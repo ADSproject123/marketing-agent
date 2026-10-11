@@ -36,7 +36,8 @@ def package_from_storyboard(
         lines.extend([
             f"SCENE {index} ({elapsed:g}–{end:g}s):",
             f"SPOKEN NARRATION (verbatim): {scene['narration']}",
-            f"ON-SCREEN HEADING: {scene['on_screen_text']}",
+            # on_screen_text is for our finishing/UI pass only — never burn it into NLM footage.
+            "EDITOR NOTE (do not render on video): short headline will be added later in edit.",
             f"VISUAL DIRECTION: {scene['visual_direction']}",
             f"SELECTED UPLOADED PHOTO: {asset_name}",
             "",
@@ -45,7 +46,7 @@ def package_from_storyboard(
     lines.extend([
         "The social post caption is separate from this narration script.",
         "Do not narrate the social caption or add an introduction, conclusion or extra scenes.",
-        "Narration subtitles and the final branded card are added in the editing pass.",
+        "Produce clean visual footage only. Captions, logos, headings, and end cards are added later.",
         _video_language_instruction(language),
     ])
     steering = (
@@ -53,10 +54,12 @@ def package_from_storyboard(
         "Use the APPROVED VIDEO SCRIPT source as the production plan. "
         "Follow its scene order, exact spoken narration, selected photos and visual directions. "
         "The first scene is the selected hook; open immediately without an intro. "
-        "Keep speech clear, music below the voice, and text inside mobile safe areas. "
+        "Keep speech clear and music below the voice. "
         "Use only the supplied business facts. Do not invent offers, prices, claims or contact details. "
         "Keep the final call to action exactly as approved. "
-        "Avoid additional subtitles: narration captions are added in the final editing pass. "
+        "CRITICAL: clean footage only — no burned-in captions, titles, logos, lower-thirds, "
+        "text boxes, on-screen headings, or subtitle bars. Narration captions and branding "
+        "are added in a separate editing pass. "
         + _video_language_instruction(language)
     )
     return CaptionPackage(

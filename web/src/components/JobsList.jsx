@@ -1,36 +1,131 @@
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { formatTime } from "../flow";
 import Icon from "./Icon";
+import { Alert, Button, EmptyState, Input, Panel, StatusBadge, Tabs } from "./ui";
+import { formatTime } from "../flow";
+
+const FILTERS = [
+  { id: "all", label: "All" },
+  { id: "live", label: "In progress" },
+  { id: "review", label: "Awaiting approval" },
+  { id: "posted", label: "Published" },
+  { id: "attention", label: "Needs attention" },
+];
 
 export default function JobsList({ jobs, activeJobId, error, onSelect, onRefresh }) {
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+
+  const filteredJobs = useMemo(() => {
+    return jobs.filter((job) => {
+      if (
+        filter === "live" &&
+        !["queued", "generating", "collecting", "posting"].includes(job.status)
+      ) {
+        return false;
+      }
+      if (filter === "review" && job.status !== "awaiting_approval") {
+        return false;
+      }
+      if (filter === "posted" && job.status !== "posted") {
+        return false;
+      }
+      if (
+        filter === "attention" &&
+        !["failed", "denied", "cancelled"].includes(job.status)
+      ) {
+        return false;
+      }
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        const matchTitle = (job.title || "").toLowerCase().includes(q);
+        const matchBrief = (job.brief || "").toLowerCase().includes(q);
+        const matchId = (job.id || "").toLowerCase().includes(q);
+        if (!matchTitle && !matchBrief && !matchId) return false;
+      }
+      return true;
+    });
+  }, [jobs, filter, search]);
+
   return (
-    <section className="panel jobs" id="jobs" aria-labelledby="jobs-title">
-      <div className="jobs-head">
-        <div>
-          <p className="panel-kicker">Campaign history</p>
-          <h2 id="jobs-title">All campaigns <span className="jobs-count">{jobs.length}</span></h2>
-        </div>
-        <button type="button" className="ghost-btn" onClick={onRefresh}>
-          <Icon name="refresh" size={15} />
+    <Panel
+      kicker="Campaign history"
+      title={
+        <>
+          All campaigns <span className="jobs-count">{filteredJobs.length}</span>
+        </>
+      }
+      subtitle="Select a campaign to review its script, preview the video, approve, or make a revision."
+      action={
+        <Button variant="ghost" size="xs" icon="refresh" onClick={onRefresh}>
           Refresh
-        </button>
+        </Button>
+      }
+      className="jobs"
+      id="jobs"
+      aria-labelledby="jobs-title"
+    >
+      <div className="jobs-controls">
+        <div className="jobs-search-wrap">
+          <Input
+            type="search"
+            icon="activity"
+            size="sm"
+            placeholder="Search campaigns by name, brief, or ID…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="jobs-filters-row">
+          <Tabs
+            items={FILTERS}
+            activeId={filter}
+            onChange={setFilter}
+            size="sm"
+            ariaLabel="Filter campaigns by status"
+          />
+        </div>
       </div>
-      <p className="jobs-note">
-        Select a campaign to review its script, preview the video, or make a revision. Publishing approvals happen in Telegram.
-      </p>
 
       <div className="jobs-list">
-        {error ? <p className="jobs-error" role="alert"><Icon name="alert" size={18} /> Could not load campaigns: {error}</p> : null}
-        {!error && !jobs.length ? (
-          <div className="empty-state empty-jobs">
-            <span className="empty-state-icon"><Icon name="layers" size={25} /></span>
-            <h3 className="empty-state-title">Your first campaign starts here</h3>
-            <p className="empty-state-text">Create a brief and we’ll turn it into a video. Your campaigns will appear here as they progress.</p>
-            <Link className="primary-btn" to="/dashboard/compose"><Icon name="plus" size={16} /> Create a campaign</Link>
-          </div>
+        {error ? (
+          <Alert tone="danger" title="Could not load campaigns">
+            {error}
+          </Alert>
         ) : null}
+
+        {!error && !filteredJobs.length ? (
+          <EmptyState
+            icon="layers"
+            title={jobs.length ? "No campaigns match your filter" : "Your first campaign starts here"}
+            description={
+              jobs.length
+                ? "Try clearing your search query or selecting a different status filter."
+                : "Create a brief and we’ll turn it into a video. Your campaigns will appear here as they progress."
+            }
+            action={
+              !jobs.length ? (
+                <Button to="/dashboard/compose" variant="primary" size="sm" icon="plus">
+                  Create a campaign
+                </Button>
+              ) : (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setFilter("all");
+                    setSearch("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              )
+            }
+          />
+        ) : null}
+
         {!error
-          ? jobs.map((job) => {
+          ? filteredJobs.map((job) => {
               const metaBits = [
                 formatTime(job.updated_at || job.created_at),
                 job.video_path ? "Video ready" : null,
@@ -46,23 +141,27 @@ export default function JobsList({ jobs, activeJobId, error, onSelect, onRefresh
                   aria-pressed={Boolean(selected)}
                   onClick={() => onSelect(job.id)}
                 >
-                  <span className="job-row-icon"><Icon name="video" size={19} /></span>
+                  <span className="job-row-icon">
+                    <Icon name="video" size={19} />
+                  </span>
                   <span className="job-row-main">
-                    <span className="job-brief">{job.title || job.brief || "Untitled campaign"}</span>
+                    <span className="job-brief">
+                      {job.title || job.brief || "Untitled campaign"}
+                    </span>
                     <span className="job-meta">{metaBits.join(" · ")}</span>
                   </span>
                   <span className="job-row-end">
-                    <span className={`job-status is-${job.status}`}>
-                      {job.status.replaceAll("_", " ")}
-                    </span>
-                    <span className="job-id">{job.id.slice(0, 8)}</span>
+                    <StatusBadge status={job.status} />
+                    <span className="job-id">#{job.id.slice(0, 8)}</span>
                   </span>
-                  <span className="job-row-chevron"><Icon name="chevron-right" size={17} /></span>
+                  <span className="job-row-chevron">
+                    <Icon name="chevron-right" size={17} />
+                  </span>
                 </button>
               );
             })
           : null}
       </div>
-    </section>
+    </Panel>
   );
 }
