@@ -17,6 +17,7 @@ function DashboardShell() {
   const { pathname } = useLocation();
   const { online, healthLabel } = useDashboard();
   const checking = healthLabel.startsWith("checking");
+  const isPipeline = pathname.replace(/\/+$/, "") === "/dashboard/pipeline";
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -27,7 +28,19 @@ function DashboardShell() {
       <DashboardSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
       <div className="dash-main">
-        <header className="dash-topbar">
+        {isPipeline ? (
+          <button
+            type="button"
+            className="pipeline-menu icon-btn"
+            onClick={() => setSidebarOpen(true)}
+            aria-label="Open navigation"
+            aria-expanded={sidebarOpen}
+            aria-controls="dashboard-navigation"
+          >
+            <Icon name="menu" size={20} />
+          </button>
+        ) : (
+          <header className="dash-topbar">
           <div className="dash-topbar-leading">
             <button
               type="button"
@@ -50,16 +63,14 @@ function DashboardShell() {
               <span className="sys-status-dot" aria-hidden="true" />
               {checking ? "Connecting" : online ? "Service online" : "Service offline"}
             </span>
-            <Link className="dash-topbar-guide" to="/dashboard/guide">
-              <Icon name="book" size={17} /><span>Help & guide</span>
-            </Link>
             <Link className="primary-btn dash-topbar-create" to="/dashboard/compose">
               <Icon name="plus" size={17} /><span>New campaign</span>
             </Link>
           </div>
-        </header>
+          </header>
+        )}
 
-        <main className="dash-content" id="main-content">
+        <main className={`dash-content${isPipeline ? " pipeline-workspace" : ""}`} id="main-content">
           <Outlet />
         </main>
       </div>

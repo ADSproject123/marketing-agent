@@ -15,6 +15,7 @@ from typing import Any, Iterator
 
 class JobStatus(str, Enum):
     COLLECTING = "collecting"
+    SCRIPT_REVIEW = "script_review"
     QUEUED = "queued"
     GENERATING = "generating"
     AWAITING_APPROVAL = "awaiting_approval"
@@ -39,6 +40,7 @@ class Job:
     user_id: int
     brief: str
     status: JobStatus
+    language: str = "en"
     sources: list[JobSource] = field(default_factory=list)
     caption: str | None = None
     title: str | None = None
@@ -52,6 +54,8 @@ class Job:
     error: str | None = None
     telegram_preview_message_id: int | None = None
     owner_account_id: str | None = None
+    storyboard: dict[str, Any] | None = None
+    quality_report: dict[str, Any] | None = None
     created_at: str = field(default_factory=lambda: _utcnow())
     updated_at: str = field(default_factory=lambda: _utcnow())
 
@@ -59,6 +63,8 @@ class Job:
         data = asdict(self)
         data["status"] = self.status.value
         data["sources"] = json.dumps([asdict(s) for s in self.sources])
+        for key in ("storyboard", "quality_report"):
+            data[key] = json.dumps(data[key], ensure_ascii=False) if data[key] is not None else None
         return data
 
     @classmethod
@@ -71,6 +77,7 @@ class Job:
             user_id=row["user_id"],
             brief=row["brief"],
             status=JobStatus(row["status"]),
+            language=row["language"] if "language" in keys else "en",
             sources=[JobSource(**s) for s in sources_raw],
             caption=row["caption"],
             title=row["title"],
@@ -84,6 +91,8 @@ class Job:
             error=row["error"],
             telegram_preview_message_id=row["telegram_preview_message_id"],
             owner_account_id=row["owner_account_id"] if "owner_account_id" in keys else None,
+            storyboard=json.loads(row["storyboard"]) if "storyboard" in keys and row["storyboard"] else None,
+            quality_report=json.loads(row["quality_report"]) if "quality_report" in keys and row["quality_report"] else None,
             created_at=row["created_at"],
             updated_at=row["updated_at"],
         )
@@ -119,6 +128,7 @@ class JobStore:
                     user_id INTEGER NOT NULL,
                     brief TEXT NOT NULL,
                     status TEXT NOT NULL,
+                    language TEXT NOT NULL DEFAULT 'en',
                     sources TEXT NOT NULL DEFAULT '[]',
                     caption TEXT,
                     title TEXT,
@@ -132,6 +142,8 @@ class JobStore:
                     error TEXT,
                     telegram_preview_message_id INTEGER,
                     owner_account_id TEXT,
+                    storyboard TEXT,
+                    quality_report TEXT,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL
                 )
@@ -143,6 +155,11 @@ class JobStore:
             }
             if "owner_account_id" not in cols:
                 conn.execute("ALTER TABLE jobs ADD COLUMN owner_account_id TEXT")
+            if "language" not in cols:
+                conn.execute("ALTER TABLE jobs ADD COLUMN language TEXT NOT NULL DEFAULT 'en'")
+            for column in ("storyboard", "quality_report"):
+                if column not in cols:
+                    conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} TEXT")
 
     def create_job(
         self,
@@ -150,16 +167,20 @@ class JobStore:
         chat_id: int,
         user_id: int,
         brief: str,
+        language: str = "en",
         sources: list[JobSource] | None = None,
         status: JobStatus = JobStatus.COLLECTING,
         owner_account_id: str | None = None,
     ) -> Job:
+        if language not in {"en", "km"}:
+            raise ValueError("Campaign language must be English (en) or Khmer (km).")
         job = Job(
             id=str(uuid.uuid4()),
             chat_id=chat_id,
             user_id=user_id,
             brief=brief.strip(),
             status=status,
+            language=language,
             sources=sources or [],
             owner_account_id=owner_account_id,
         )
@@ -168,12 +189,12 @@ class JobStore:
             conn.execute(
                 """
                 INSERT INTO jobs (
-                    id, chat_id, user_id, brief, status, sources, caption, title,
+                    id, chat_id, user_id, brief, status, language, sources, caption, title,
                     steering_prompt, video_format, video_path, notebook_id, artifact_id,
                     facebook_post_id, facebook_post_url, error,
                     telegram_preview_message_id, owner_account_id, created_at, updated_at
                 ) VALUES (
-                    :id, :chat_id, :user_id, :brief, :status, :sources, :caption, :title,
+                    :id, :chat_id, :user_id, :brief, :status, :language, :sources, :caption, :title,
                     :steering_prompt, :video_format, :video_path, :notebook_id, :artifact_id,
                     :facebook_post_id, :facebook_post_url, :error,
                     :telegram_preview_message_id, :owner_account_id, :created_at, :updated_at
@@ -264,6 +285,8 @@ class JobStore:
             "error",
             "telegram_preview_message_id",
             "owner_account_id",
+            "storyboard",
+            "quality_report",
         }
         unknown = set(fields) - allowed
         if unknown:
@@ -279,6 +302,8 @@ class JobStore:
                 value = json.dumps(
                     [asdict(s) if isinstance(s, JobSource) else s for s in value]
                 )
+            if key in {"storyboard", "quality_report"}:
+                value = json.dumps(value, ensure_ascii=False) if value is not None else None
             values[key] = value
             assignments.append(f"{key} = :{key}")
 
@@ -288,6 +313,44 @@ class JobStore:
                 values,
             )
 
+        job = self.get(job_id)
+        if not job:
+            raise KeyError(f"Job not found: {job_id}")
+        return job
+
+    def save_storyboard(
+        self, job_id: str, storyboard: dict, *, expected_updated_at: str,
+        allowed_statuses: tuple[JobStatus, ...] = (JobStatus.SCRIPT_REVIEW,),
+        status: JobStatus = JobStatus.SCRIPT_REVIEW,
+    ) -> Job:
+        """Compare and save in one statement, including the render state transition."""
+        placeholders = ",".join("?" for _ in allowed_statuses)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"UPDATE jobs SET storyboard = ?, title = ?, caption = ?, status = ?, "
+                f"error = NULL, quality_report = NULL, updated_at = ? "
+                f"WHERE id = ? AND updated_at = ? AND status IN ({placeholders})",
+                (json.dumps(storyboard, ensure_ascii=False), storyboard["title"],
+                 storyboard["caption"], status.value, _utcnow(), job_id,
+                 expected_updated_at, *(value.value for value in allowed_statuses)),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("This campaign changed. Reload the latest script before continuing.")
+        job = self.get(job_id)
+        if not job:
+            raise KeyError(f"Job not found: {job_id}")
+        return job
+
+    def claim_draft_retry(self, job_id: str, *, expected_updated_at: str) -> Job:
+        """Reserve a failed script draft once without starting a video job."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET status = ?, error = NULL, updated_at = ? "
+                "WHERE id = ? AND updated_at = ? AND status = ? AND storyboard IS NULL",
+                (JobStatus.COLLECTING.value, _utcnow(), job_id, expected_updated_at, JobStatus.FAILED.value),
+            )
+            if cursor.rowcount != 1:
+                raise ValueError("This draft changed. Reload it before retrying.")
         job = self.get(job_id)
         if not job:
             raise KeyError(f"Job not found: {job_id}")

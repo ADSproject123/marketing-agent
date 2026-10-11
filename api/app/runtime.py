@@ -44,14 +44,16 @@ class Runtime:
         self,
         *,
         brief: str = "",
+        language: str = "en",
         sources: list[JobSource] | None = None,
         owner_account_id: str | None = None,
+        start: bool = True,
     ) -> Job:
         resolved = resolve_settings_for_account(owner_account_id, base=self.settings)
         chat_id = resolved.allowed_telegram_user_id
         if not chat_id:
             raise ValueError(
-                "Set your Telegram user ID in Dashboard → Settings before starting a job."
+                "Set ALLOWED_TELEGRAM_USER_ID in the server .env before starting a job."
             )
 
         # Ensure user bot is polled if they provided their own token.
@@ -66,11 +68,13 @@ class Runtime:
             chat_id=chat_id,
             user_id=chat_id,
             brief=(brief or "").strip() or "Auto — Gemini invents the campaign",
+            language=language,
             sources=list(sources or []),
             status=JobStatus.QUEUED,
             owner_account_id=owner_account_id,
         )
-        self.start_job(job.id)
+        if start:
+            self.start_job(job.id)
         logger.info(
             "Created and queued job %s for account %s",
             job.id[:8],

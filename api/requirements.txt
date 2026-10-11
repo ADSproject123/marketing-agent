@@ -6,10 +6,12 @@ google-genai==2.29.0
 httptools==0.8.0
 httpx==0.28.1
 notebooklm-py==0.8.4
+Pillow==12.3.0
 playwright==1.63.0
 pydantic==2.14.0
 pynotebooklm==0.21.0
 python-dotenv==1.2.4
+python-multipart==0.0.22
 python-telegram-bot==21.10
 starlette==0.46.2
 uvicorn==0.34.2

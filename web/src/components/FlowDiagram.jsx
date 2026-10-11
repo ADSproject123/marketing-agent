@@ -28,13 +28,19 @@ function strokeFor(state) {
   return "#ccd5e8";
 }
 
-export default function FlowDiagram({ job }) {
-  const layout = computeLayout();
+export default function FlowDiagram({ job, fullscreen = false }) {
+  // Always top → bottom (vertical stack)
+  const layout = computeLayout("vertical");
   const states = nodeStateMap(job);
   const activeEdges = activeEdgeKeys(job);
 
   return (
-    <div className="flow-scroll" tabIndex={0} role="region" aria-label="Campaign workflow. Scroll horizontally to explore all stages.">
+    <div
+      className="flow-scroll is-vertical"
+      tabIndex={0}
+      role="region"
+      aria-label="Campaign workflow"
+    >
       <svg
         viewBox={`0 0 ${layout.width} ${layout.height}`}
         width={layout.width}
@@ -71,7 +77,8 @@ export default function FlowDiagram({ job }) {
           const key = `${edge.from}->${edge.to}`;
           const isActive = activeEdges.has(key);
           const midX = (edge.sourceX + edge.targetX) / 2;
-          const d = `M ${edge.sourceX} ${edge.sourceY} C ${midX} ${edge.sourceY}, ${midX} ${edge.targetY}, ${edge.targetX} ${edge.targetY}`;
+          const midY = (edge.sourceY + edge.targetY) / 2;
+          const d = `M ${edge.sourceX} ${edge.sourceY} C ${edge.sourceX} ${midY}, ${edge.targetX} ${midY}, ${edge.targetX} ${edge.targetY}`;
           return (
             <g key={key}>
               <path
@@ -84,7 +91,7 @@ export default function FlowDiagram({ job }) {
                 opacity={isActive ? 1 : 0.28}
                 markerEnd={`url(#${isActive ? "arrowActive" : "arrow"})`}
               />
-              {edge.label ? (
+              {edge.label && !fullscreen ? (
                 <text
                   x={midX}
                   y={(edge.sourceY + edge.targetY) / 2 - 10}
@@ -125,6 +132,7 @@ export default function FlowDiagram({ job }) {
               transform={`translate(${n.x}, ${n.y})`}
               opacity={opacity}
             >
+              <title>{`${step.title}: ${state}`}</title>
               {state === "current" ? (
                 <rect
                   className="flow-pulse"
@@ -146,25 +154,28 @@ export default function FlowDiagram({ job }) {
               />
               <text
                 x={NODE_W / 2}
-                y="24"
+                y={fullscreen ? NODE_H / 2 : 24}
+                dominantBaseline={fullscreen ? "middle" : undefined}
                 textAnchor="middle"
                 fill={INK}
-                fontSize="13"
+                fontSize={fullscreen ? 14 : 13}
                 fontWeight="600"
                 fontFamily="Figtree, sans-serif"
               >
                 {step.title}
               </text>
-              <text
-                x={NODE_W / 2}
-                y="42"
-                textAnchor="middle"
-                fill={labelColor}
-                fontSize="11"
-                fontFamily="IBM Plex Mono, monospace"
-              >
-                {sub}
-              </text>
+              {!fullscreen ? (
+                <text
+                  x={NODE_W / 2}
+                  y="42"
+                  textAnchor="middle"
+                  fill={labelColor}
+                  fontSize="11"
+                  fontFamily="IBM Plex Mono, monospace"
+                >
+                  {sub}
+                </text>
+              ) : null}
             </g>
           );
         })}

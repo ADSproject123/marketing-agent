@@ -1,83 +1,63 @@
 import ComposeForm from "../../components/ComposeForm";
-import Icon from "../../components/Icon";
+import StoryboardEditor from "../../components/StoryboardEditor";
+import { Link } from "react-router-dom";
 import { useDashboard } from "../../dashboard/DashboardContext";
 
 export default function ComposePage() {
   const {
-    online,
-    templateId,
-    brief,
-    urls,
-    notes,
-    starting,
-    startStatus,
-    startStatusClass,
-    onTemplateChange,
-    setBrief,
-    setUrls,
-    setNotes,
-    onStart,
+    campaignDraft, campaignStep, businessView, setBusinessView, campaignErrors, promotions,
+    profilesLoading, savingPromotion, profileError, starting, startStatus, startStatusClass,
+    onCampaignDraftChange, onPromotionSelect, onDemoSelect, onCampaignSubmit,
+    onCampaignBack, onCampaignEditStep,
+    scriptJob, storyboard, scriptErrors, scriptBusy, scriptStatus, scriptStatusClass,
+    scriptDirty, scriptLoading, scriptLoadError, onStoryboardChange, onStoryboardAction, onReloadScript,
+    scriptCanEditSetup,
   } = useDashboard();
+  const pickingBusiness = campaignStep === 0 && businessView === "list";
+  const reviewingScript = campaignStep === 5 && scriptJob && storyboard;
+
+  if (scriptLoading || scriptLoadError) return (
+    <div className="dash-page"><section className="panel script-loading"><h1>{scriptLoading ? "Loading your script…" : "Script could not load"}</h1>{scriptLoadError ? <><p role="alert">{scriptLoadError}</p><div className="detail-actions"><button className="primary-btn" type="button" onClick={onReloadScript}>Try again</button><Link className="ghost-btn" to="/dashboard/jobs">Campaigns</Link></div></> : <p>Restoring your saved campaign draft.</p>}</section></div>
+  );
 
   return (
-    <div className="dash-page">
-      <header className="dash-page-head">
-        <div>
-          <p className="panel-kicker">Create</p>
-          <h1>New campaign</h1>
-          <p className="dash-page-lede">
-            Turn your next idea into a video campaign. Start with a brief and follow its progress in real time.
-          </p>
-        </div>
-      </header>
+    <div className={`dash-page ${pickingBusiness ? "is-business-picker" : ""}`}>
+      {pickingBusiness ? null : (
+        <header className="dash-page-head campaign-page-head">
+          <div>
+            <p className="panel-kicker">Create</p>
+            <h1>{reviewingScript ? "Your campaign script" : "New campaign"}</h1>
+            <p className="dash-page-lede">{reviewingScript ? "Review the plan, then generate your marketing video." : "Fill in your business details to shape the video."}</p>
+          </div>
+        </header>
+      )}
 
-      <div className="workspace">
-        <ComposeForm
-          templateId={templateId}
-          brief={brief}
-          urls={urls}
-          notes={notes}
+      <div className={`workspace campaign-workspace ${pickingBusiness ? "is-picker" : ""}`}>
+        {reviewingScript ? <StoryboardEditor
+          job={scriptJob} storyboard={storyboard} errors={scriptErrors} busy={scriptBusy}
+          dirty={scriptDirty} status={scriptStatus} statusClass={scriptStatusClass}
+          onChange={onStoryboardChange} onAction={onStoryboardAction} onReload={onReloadScript}
+          onBack={scriptCanEditSetup ? () => onCampaignEditStep(4) : undefined}
+        /> : <ComposeForm
+          draft={campaignDraft}
+          step={campaignStep}
+          businessView={businessView}
+          onBusinessViewChange={setBusinessView}
+          promotions={promotions}
+          profilesLoading={profilesLoading}
+          savingPromotion={savingPromotion}
+          profileError={profileError}
+          errors={campaignErrors}
           starting={starting}
           startStatus={startStatus}
           startStatusClass={startStatusClass}
-          onTemplateChange={onTemplateChange}
-          onBriefChange={setBrief}
-          onUrlsChange={setUrls}
-          onNotesChange={setNotes}
-          onStart={onStart}
-        />
-
-        <aside className="panel readiness" aria-labelledby="ready-title">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Your workflow</p>
-              <h2 id="ready-title">Ready to create</h2>
-            </div>
-          </div>
-          <ul className="ready-list">
-            <li className={online ? "is-ok" : ""}>
-              <span className="ready-item-label"><span className="ready-icon"><Icon name="activity" size={17} /></span>Campaign service</span>
-              <strong>{online ? "Connected" : "Offline"}</strong>
-            </li>
-            <li>
-              <span className="ready-item-label"><span className="ready-icon"><Icon name="send" size={17} /></span>Review & approval</span>
-              <strong>Telegram</strong>
-            </li>
-            <li>
-              <span className="ready-item-label"><span className="ready-icon"><Icon name="video" size={17} /></span>Video creation</span>
-              <strong>NotebookLM</strong>
-            </li>
-            <li>
-              <span className="ready-item-label"><span className="ready-icon"><Icon name="globe" size={17} /></span>Publishing</span>
-              <strong>Facebook Page</strong>
-            </li>
-          </ul>
-          <div className="ready-callout">
-            <Icon name="shield" size={21} />
-            <div><h3>You’re always in control</h3><p>Your preview arrives in Telegram. Approve it when you’re happy, or decline to stop the campaign.</p></div>
-          </div>
-          <p className="ready-note"><Icon name="clock" size={15} /> Video creation usually takes a few minutes.</p>
-        </aside>
+          onDraftChange={onCampaignDraftChange}
+          onPromotionSelect={onPromotionSelect}
+          onDemoSelect={onDemoSelect}
+          onSubmit={onCampaignSubmit}
+          onBack={onCampaignBack}
+          onEditStep={onCampaignEditStep}
+        />}
       </div>
     </div>
   );

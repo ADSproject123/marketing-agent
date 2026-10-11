@@ -1,5 +1,4 @@
 import { Link } from "react-router-dom";
-import { useAuth } from "../../auth";
 import Icon from "../../components/Icon";
 import { useDashboard } from "../../dashboard/DashboardContext";
 import { ACTIVE_STATUSES, formatTime, stageForJob, STEPS } from "../../flow";
@@ -11,13 +10,11 @@ const SHORTCUTS = [
 ];
 
 export default function OverviewPage() {
-  const { user } = useAuth();
   const { jobs, jobsError, liveCount, activeJob, setActiveJobId, loadJobs } = useDashboard();
   const recent = jobs.slice(0, 5);
   const awaitingReview = jobs.filter((job) => job.status === "awaiting_approval").length;
   const completed = jobs.filter((job) => job.status === "posted").length;
   const activeStage = activeJob ? STEPS[stageForJob(activeJob)]?.title : null;
-  const firstName = user?.name?.trim().split(/\s+/)[0];
   const stats = [
     { label: "Recent campaigns", value: jobs.length, note: "Up to 20 most recent jobs", icon: "layers", tone: "blue" },
     { label: "In progress", value: liveCount, note: liveCount ? "Your agent is on it" : "Ready for your next campaign", icon: "activity", tone: "violet" },
@@ -27,16 +24,7 @@ export default function OverviewPage() {
 
   return (
     <div className="dash-page overview-page">
-      <header className="dash-page-head">
-        <div>
-          <p className="panel-kicker">Your workspace, at a glance</p>
-          <h1>Welcome back{firstName ? `, ${firstName}` : ""}<span className="overview-greeting-dot">.</span></h1>
-          <p className="dash-page-lede">A little less busywork. A lot more great content.</p>
-        </div>
-        <Link className="ghost-btn overview-guide-link" to="/dashboard/guide">
-          <Icon name="book" size={17} /> Getting started <Icon name="arrow-up-right" size={16} />
-        </Link>
-      </header>
+      <h1 className="visually-hidden">Overview</h1>
 
       {jobsError ? (
         <div className="overview-error" role="alert">
@@ -45,22 +33,6 @@ export default function OverviewPage() {
           <button type="button" className="ghost-btn" onClick={() => loadJobs()}><Icon name="refresh" size={16} /> Try again</button>
         </div>
       ) : null}
-
-      <section className="overview-banner" aria-labelledby="overview-banner-title">
-        <div className="overview-banner-copy">
-          <span className="overview-banner-tag"><Icon name="sparkles" size={14} /> Your ideas. Your AI creative team.</span>
-          <h2 id="overview-banner-title">Your next campaign starts with an idea.</h2>
-          <p>Give your agent a brief. Get a caption and video, ready for your review.</p>
-          <Link className="primary-btn" to="/dashboard/compose">Create a campaign <Icon name="arrow-right" size={17} /></Link>
-        </div>
-        <div className="overview-banner-visual" aria-hidden="true">
-          <div className="overview-visual-orbit" />
-          <span className="overview-visual-spark"><Icon name="sparkles" size={30} /></span>
-          <div className="overview-visual-card overview-visual-brief"><span className="overview-visual-icon"><Icon name="file" size={18} /></span><div><strong>Your campaign brief</strong><span>One idea. Endless possibilities.</span></div><Icon name="check" size={17} /></div>
-          <div className="overview-visual-card overview-visual-video"><span className="overview-visual-icon"><Icon name="video" size={20} /></span><div><strong>Made for your audience</strong><span>Caption + short-form video</span></div><span className="overview-visual-play"><Icon name="play" size={14} /></span></div>
-          <span className="overview-visual-review"><Icon name="shield" size={14} /> You make the final call</span>
-        </div>
-      </section>
 
       <div className="overview-stats">
         {stats.map((stat) => (
@@ -133,7 +105,6 @@ export default function OverviewPage() {
           </div>
         )}
       </section>
-      <p className="overview-footnote"><Icon name="shield" size={13} /> Every campaign is reviewed by you in Telegram before publishing.</p>
     </div>
   );
 }

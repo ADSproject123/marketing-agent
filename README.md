@@ -2,19 +2,20 @@
 
 Marketing agent where the **system starts the job** and **Telegram only approves or denies**:
 
-1. Register / log in on the web app, then hit **Start** on the dashboard
-2. Gemini invents campaign, caption, steering, and NotebookLM source text
-3. NotebookLM generates a **short vertical Video Overview** (TikTok frame)
-4. Telegram receives the preview — you only **Approve / Deny**
-5. On approve, publishes to a **Facebook Page** (when configured)
+1. Save a business, product or service, then answer the guided campaign questions in English or Khmer.
+2. Generate a script, choose one of three hooks, and edit the timed scenes, narration, headings and photos.
+3. Generate the video from the reviewed script. The finishing pass adds vertical framing, narration captions, selected photos and a business end card.
+4. Review the measured video checks and preview in campaign history. Make a stronger opening, shorter script or different ending without repeating the business setup.
+5. Telegram receives the final preview. **Approve / Deny** controls publishing to a **Facebook Page** when configured.
 
 ## Architecture
 
 ```
 web/  (React)
   → api/ (FastAPI + Telegram)
-      → Gemini caption + steering
-      → NotebookLM video (optional)
+      → Gemini hooks + editable scene plan
+      → Script review → NotebookLM video (optional)
+      → Video finishing + output checks
       → Telegram Approve / Deny
       → Facebook Graph Video API
 ```
@@ -40,6 +41,10 @@ marketing_agent/
 - Google account with NotebookLM access
 - Telegram bot token
 - Meta app + Facebook Page with publish permissions (optional)
+- FFmpeg and FFprobe on the API server for video finishing
+- A Khmer font and a text renderer with complex-script shaping (Pango, or Pillow with RAQM) for Khmer overlays
+
+On macOS, the finishing pass can use the system Khmer Sangam MN font. For Linux servers, install Pango and a Khmer font such as Noto Sans Khmer alongside FFmpeg. Captions follow the approved narration and planned scene timing, scaled to the generated video's duration. Review them against the spoken audio before publishing; they are not an automatic transcription.
 
 ## Setup
 

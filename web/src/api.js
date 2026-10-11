@@ -79,11 +79,118 @@ export async function fetchJobs(limit = 20) {
   return api(`/api/jobs?limit=${limit}`);
 }
 
-export async function startJob({ brief = "", urls = [], notes = null, template = "" } = {}) {
-  return api("/api/jobs", {
+export async function fetchJob(id) {
+  return api(`/api/jobs/${encodeURIComponent(id)}`);
+}
+
+export async function fetchPromotions() {
+  return api("/api/promotions");
+}
+
+export async function createPromotion({ kind, name, description, benefit = "", location = "", website = "" }) {
+  return api("/api/promotions", {
     method: "POST",
-    body: { brief, urls, notes, template },
+    body: { kind, name, description, benefit, location, website },
   });
+}
+
+async function submitCampaign(path, {
+  brief = "",
+  urls = [],
+  notes = null,
+  template = "",
+  language = "en",
+  assets = [],
+} = {}) {
+  const files = Array.isArray(assets) ? assets.filter(Boolean) : [];
+  if (!files.length) {
+    return api(path, {
+      method: "POST",
+      body: { brief, urls, notes, template, language },
+    });
+  }
+
+  const form = new FormData();
+  form.append("brief", brief || "");
+  form.append("notes", notes || "");
+  form.append("template", template || "");
+  form.append("language", language || "en");
+  form.append("urls", JSON.stringify(urls || []));
+  for (const file of files) form.append("assets", file, file.name);
+
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  const res = await fetch(apiUrl(path), {
+    method: "POST",
+    headers,
+    body: form,
+  });
+  if (!res.ok) {
+    const err = new Error(await parseError(res));
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+export function startJob(payload = {}) {
+  return submitCampaign("/api/jobs", payload);
+}
+
+export function createCampaignDraft(payload = {}) {
+  return submitCampaign("/api/campaign-drafts", payload);
+}
+
+export function saveStoryboard(id, storyboard, updatedAt) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/storyboard`, {
+    method: "PUT",
+    body: { storyboard, expected_updated_at: updatedAt },
+  });
+}
+
+export function reviseStoryboard(id, action, storyboard, updatedAt) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/revise`, {
+    method: "POST",
+    body: { action, storyboard, expected_updated_at: updatedAt },
+  });
+}
+
+export function renderStoryboard(id, storyboard, updatedAt) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/render`, {
+    method: "POST",
+    body: { storyboard, expected_updated_at: updatedAt },
+  });
+}
+
+export function redraftStoryboard(id, action) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/redraft`, {
+    method: "POST",
+    body: action ? { action } : {},
+  });
+}
+
+export function retryCampaignDraft(id, updatedAt) {
+  return api(`/api/jobs/${encodeURIComponent(id)}/draft`, {
+    method: "POST",
+    body: { expected_updated_at: updatedAt },
+  });
+}
+
+// Images and videos remain account-owned, so media requests carry the same
+// authentication as JSON requests and are displayed through local blob URLs.
+export async function fetchPrivateMedia(path, signal) {
+  const headers = {};
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  const res = await fetch(apiUrl(path), { headers, signal });
+  if (!res.ok) {
+    const err = new Error(await parseError(res));
+    err.status = res.status;
+    throw err;
+  }
+  return res.blob();
 }
 
 export async function fetchIntegrations() {

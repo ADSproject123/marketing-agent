@@ -16,6 +16,7 @@ PROJECT_ROOT = API_DIR.parent
 
 DATA_DIR = PROJECT_ROOT / "data"
 VIDEOS_DIR = DATA_DIR / "videos"
+UPLOADS_DIR = DATA_DIR / "uploads"
 DOWNLOADS_DIR = DATA_DIR / "downloads"
 DB_PATH = DATA_DIR / "jobs.db"
 WEB_DIST = PROJECT_ROOT / "web" / "dist"
@@ -100,6 +101,7 @@ class Settings:
     video_timeout_minutes: int
     data_dir: Path
     videos_dir: Path
+    uploads_dir: Path
     downloads_dir: Path
     db_path: Path
 
@@ -137,10 +139,12 @@ def get_settings() -> Settings:
         video_timeout_minutes=int(_optional("VIDEO_TIMEOUT_MINUTES", "45") or "45"),
         data_dir=DATA_DIR,
         videos_dir=VIDEOS_DIR,
+        uploads_dir=UPLOADS_DIR,
         downloads_dir=DOWNLOADS_DIR,
         db_path=DB_PATH,
     )
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.videos_dir.mkdir(parents=True, exist_ok=True)
+    settings.uploads_dir.mkdir(parents=True, exist_ok=True)
     settings.downloads_dir.mkdir(parents=True, exist_ok=True)
     return settings

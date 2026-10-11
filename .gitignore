@@ -4,6 +4,8 @@ __pycache__/
 .env
 data/videos/*
 !data/videos/.gitkeep
+data/uploads/*
+!data/uploads/.gitkeep
 data/downloads/*
 !data/downloads/.gitkeep
 data/*.db

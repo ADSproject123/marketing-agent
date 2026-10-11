@@ -2,17 +2,23 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import re
 import sys
+import shutil
 from pathlib import Path
+from typing import Literal
+from urllib.parse import urlsplit
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from starlette.datastructures import UploadFile
 
 API_DIR = Path(__file__).resolve().parent.parent
 if str(API_DIR) not in sys.path:
@@ -22,10 +28,14 @@ from app.auth.security import create_token, verify_token
 from app.auth.store import UserStore
 from app.config import DB_PATH, WEB_DIST
 from app.integrations import facebook_oauth
+from app.integrations.resolve import resolve_settings_for_account
 from app.integrations.store import IntegrationStore
-from app.jobs.store import JobSource, JobStore
+from app.jobs.store import JobSource, JobStatus, JobStore
 from app.notebooklm.client import check_auth
+from app.promotions.store import PromotionStore
 from app.runtime import get_runtime
+from app.storyboards import Storyboard, draft_storyboard, revise_storyboard, validate_storyboard
+from app.uploads import save_job_assets
 
 URL_RE = re.compile(r"https?://[^\s<>\"']+")
 bearer = HTTPBearer(auto_error=False)
@@ -73,6 +83,58 @@ class CreateJobRequest(BaseModel):
     urls: list[str] = Field(default_factory=list)
     notes: str | None = Field(default=None, max_length=4000)
     template: str | None = Field(default=None, max_length=64)
+    language: Literal["en", "km"] = "en"
+
+
+class StoryboardEditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    storyboard: Storyboard
+    expected_updated_at: str = Field(min_length=1, max_length=100)
+
+
+class StoryboardRevisionRequest(StoryboardEditRequest):
+    action: Literal["stronger_hook", "shorter", "change_ending"]
+
+
+class RedraftRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["stronger_hook", "shorter", "change_ending"] | None = None
+
+
+class DraftRetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_updated_at: str = Field(min_length=1, max_length=100)
+
+
+class CreatePromotionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["shop", "product", "service", "other"]
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(min_length=1, max_length=1500)
+    benefit: str = Field(default="", max_length=1000)
+    location: str = Field(default="", max_length=300)
+    website: str = Field(default="", max_length=500)
+
+    @field_validator("name", "description", "benefit", "location", "website", mode="before")
+    @classmethod
+    def trim_fields(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+    @field_validator("website")
+    @classmethod
+    def validate_website(cls, value: str) -> str:
+        if not value:
+            return value
+        try:
+            parsed = urlsplit(value)
+            valid = parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+            _ = parsed.port  # Reject malformed ports rather than saving an unusable link.
+        except ValueError:
+            valid = False
+        if not valid or any(char.isspace() for char in value):
+            raise ValueError("Use a full website URL beginning with https:// or http://.")
+        return value
 
 
 class RegisterRequest(BaseModel):
@@ -108,11 +170,17 @@ def _integrations() -> IntegrationStore:
     return IntegrationStore()
 
 
+def _promotions() -> PromotionStore:
+    return PromotionStore(DB_PATH)
+
+
 def _job_stage(job) -> str:
     """Map store status → live flow node id for the dashboard."""
     from app.jobs.store import JobStatus
 
     status = job.status
+    if status == JobStatus.SCRIPT_REVIEW:
+        return "gemini"
     if status in {JobStatus.QUEUED, JobStatus.COLLECTING}:
         return "system"
     if status == JobStatus.GENERATING:
@@ -140,6 +208,7 @@ def _job_payload(job) -> dict:
     return {
         "id": job.id,
         "brief": job.brief,
+        "language": job.language,
         "status": job.status.value,
         "stage": _job_stage(job),
         "title": job.title,
@@ -147,11 +216,29 @@ def _job_payload(job) -> dict:
         "video_format": job.video_format,
         "source_count": len(job.sources),
         "video_path": job.video_path,
+        "video_url": f"/api/jobs/{job.id}/video" if job.video_path else None,
+        "storyboard": job.storyboard,
+        "quality_report": _public_quality_report(job.quality_report),
+        "assets": [
+            {"id": str(index), "name": source.title or Path(source.value).name,
+             "title": source.title or Path(source.value).name,
+             "url": f"/api/jobs/{job.id}/assets/{index}"}
+            for index, source in enumerate(source for source in job.sources if source.kind == "file")
+        ],
         "facebook_post_url": job.facebook_post_url,
         "error": job.error,
         "created_at": job.created_at,
         "updated_at": job.updated_at,
     }
+
+
+def _public_quality_report(value):
+    if isinstance(value, dict):
+        return {key: _public_quality_report(item) for key, item in value.items()
+                if not key.endswith("_path")}
+    if isinstance(value, list):
+        return [_public_quality_report(item) for item in value]
+    return value
 
 
 def _store() -> JobStore:
@@ -216,6 +303,20 @@ def login(body: LoginRequest) -> dict:
 @app.get("/api/auth/me")
 def me(user: dict = Depends(_require_user)) -> dict:
     return {"ok": True, "user": user}
+
+
+@app.get("/api/promotions")
+def get_promotions(user: dict = Depends(_require_user)) -> dict:
+    return {
+        "ok": True,
+        "promotions": [promotion.public() for promotion in _promotions().list_for_account(user["id"])],
+    }
+
+
+@app.post("/api/promotions", status_code=201)
+def create_promotion(body: CreatePromotionRequest, user: dict = Depends(_require_user)) -> dict:
+    promotion = _promotions().create(account_id=user["id"], **body.model_dump())
+    return {"ok": True, "promotion": promotion.public()}
 
 
 @app.get("/api/integrations")
@@ -417,10 +518,61 @@ def get_job(job_id: str, user: dict = Depends(_require_user)) -> dict:
     return _job_payload(job)
 
 
-@app.post("/api/jobs")
-async def create_job(
-    body: CreateJobRequest = CreateJobRequest(),
-    user: dict = Depends(_require_user),
+async def _parse_create_job_request(
+    request: Request,
+) -> tuple[CreateJobRequest, list[UploadFile]]:
+    content_type = (request.headers.get("content-type") or "").lower()
+    if content_type.startswith("multipart/form-data"):
+        form = await request.form()
+        urls_raw = form.get("urls")
+        if isinstance(urls_raw, UploadFile):
+            urls_raw = ""
+        urls_text = str(urls_raw or "").strip()
+        try:
+            urls = json.loads(urls_text) if urls_text else []
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=400, detail="urls must be a JSON array of links."
+            ) from exc
+        if not isinstance(urls, list):
+            raise HTTPException(
+                status_code=400, detail="urls must be a JSON array of links."
+            )
+        payload = {
+            "brief": str(form.get("brief") or ""),
+            "notes": str(form.get("notes") or "") or None,
+            "template": str(form.get("template") or "") or None,
+            "language": str(form.get("language") or "en"),
+            "urls": [str(item) for item in urls],
+        }
+        try:
+            body = CreateJobRequest.model_validate(payload)
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors()) from exc
+        assets = [
+            item
+            for item in form.getlist("assets")
+            if isinstance(item, UploadFile) and (item.filename or "").strip()
+        ]
+        return body, assets
+
+    raw = await request.body()
+    if not raw:
+        return CreateJobRequest(), []
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="Invalid JSON body.") from exc
+    try:
+        return CreateJobRequest.model_validate(payload), []
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
+
+async def _create_job_impl(
+    request: Request,
+    user: dict,
+    *, draft_only: bool = False,
 ) -> dict:
     try:
         runtime = get_runtime()
@@ -430,16 +582,19 @@ async def create_job(
             detail="Agent runtime not ready. Start with: python api/run.py",
         ) from exc
 
-    integ = _integrations().get(user["id"])
-    if not integ or not integ.telegram_user_id:
+    body, assets = await _parse_create_job_request(request)
+
+    # Prefer per-account overrides; otherwise use platform .env
+    resolved = resolve_settings_for_account(user["id"], base=runtime.settings)
+    if not resolved.allowed_telegram_user_id:
         raise HTTPException(
             status_code=400,
-            detail="Add your Telegram user ID in Settings before starting a job.",
+            detail="Set ALLOWED_TELEGRAM_USER_ID in the server .env before starting a job.",
         )
-    if not integ.gemini_api_keys:
+    if not resolved.gemini_api_keys:
         raise HTTPException(
             status_code=400,
-            detail="Add at least one Gemini API key in Settings before starting a job.",
+            detail="Set GEMINI_API_KEY (or GEMINI_API_KEYS) in the server .env before starting a job.",
         )
 
     brief = (body.brief or "").strip()
@@ -479,17 +634,248 @@ async def create_job(
     try:
         job = runtime.create_and_start(
             brief=brief,
+            language=body.language,
             sources=sources,
             owner_account_id=user["id"],
+            start=not draft_only and not bool(assets),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if assets:
+        try:
+            file_sources = await save_job_assets(
+                resolved.uploads_dir, job.id, assets
+            )
+            for source in file_sources:
+                runtime.store.add_source(job.id, source)
+            job = runtime.store.get(job.id) or job
+            if not draft_only:
+                runtime.start_job(job.id)
+        except HTTPException:
+            runtime.store.update(
+                job.id, status=JobStatus.FAILED, error="Brand image upload failed."
+            )
+            raise
+        except Exception as exc:
+            runtime.store.update(
+                job.id,
+                status=JobStatus.FAILED,
+                error=f"Brand image upload failed: {exc}",
+            )
+            raise HTTPException(
+                status_code=400, detail="Could not save brand images."
+            ) from exc
+
+    if draft_only:
+        runtime.store.update(job.id, status=JobStatus.COLLECTING)
+        try:
+            storyboard = await asyncio.to_thread(
+                draft_storyboard, resolved, job.brief, job.sources, language=job.language,
+            )
+            job = runtime.store.update(
+                job.id, storyboard=storyboard, title=storyboard["title"],
+                caption=storyboard["caption"], status=JobStatus.SCRIPT_REVIEW, error=None,
+            )
+        except Exception as exc:
+            runtime.store.update(job.id, status=JobStatus.FAILED, error="Script generation failed. Retry using your saved campaign details.")
+            raise HTTPException(status_code=502, detail="Could not generate the script. Please try again; your business details are saved.") from exc
     return {
         "ok": True,
         "job": _job_payload(job),
-        "message": "Job started. Watch Telegram for Approve / Deny.",
+        "message": "Script ready for review." if draft_only else "Job started. Watch Telegram for Approve / Deny.",
     }
+
+
+@app.post("/api/jobs")
+async def create_job(request: Request, user: dict = Depends(_require_user)) -> dict:
+    try:
+        return await _create_job_impl(request, user)
+    finally:
+        await request.close()
+
+
+@app.post("/api/campaign-drafts")
+async def create_campaign_draft(request: Request, user: dict = Depends(_require_user)) -> dict:
+    try:
+        return await _create_job_impl(request, user, draft_only=True)
+    finally:
+        await request.close()
+
+
+def _owned_job(job_id: str, user: dict):
+    job = _store().get(job_id)
+    if not job or job.owner_account_id != user["id"]:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+@app.post("/api/jobs/{job_id}/draft")
+async def retry_campaign_draft(job_id: str, body: DraftRetryRequest, user: dict = Depends(_require_user)) -> dict:
+    _owned_job(job_id, user)
+    try:
+        runtime = get_runtime()
+        settings = resolve_settings_for_account(user["id"], base=runtime.settings)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Agent runtime not ready.") from exc
+    try:
+        job = runtime.store.claim_draft_retry(job_id, expected_updated_at=body.expected_updated_at)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
+        plan = await asyncio.to_thread(draft_storyboard, settings, job.brief, job.sources, language=job.language)
+        saved = runtime.store.update(job.id, storyboard=plan, title=plan["title"], caption=plan["caption"], status=JobStatus.SCRIPT_REVIEW)
+    except Exception as exc:
+        runtime.store.update(job.id, status=JobStatus.FAILED, error="Script generation failed. Retry using your saved campaign details.")
+        raise HTTPException(status_code=502, detail="Could not generate the script. Please try again; your business details are saved.") from exc
+    return {"ok": True, "job": _job_payload(saved), "message": "Script ready for review."}
+
+
+def _editable_storyboard(job, expected_updated_at: str) -> None:
+    allowed = {JobStatus.SCRIPT_REVIEW, JobStatus.FAILED}
+    if job.status not in allowed or not job.storyboard or job.updated_at != expected_updated_at:
+        raise HTTPException(status_code=409, detail="This campaign changed. Reload the latest script before continuing.")
+    try:
+        if job.id in getattr(get_runtime(), "_running", set()):
+            raise HTTPException(status_code=409, detail="Wait for the current generation to finish before revising.")
+    except RuntimeError:
+        pass
+
+
+def _validated_edit(job, body: StoryboardEditRequest) -> dict:
+    _editable_storyboard(job, body.expected_updated_at)
+    try:
+        return validate_storyboard(
+            body.storyboard, language=job.language, sources=job.sources, original=job.storyboard,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _save_plan(job, plan: dict, body: StoryboardEditRequest, *, render: bool = False):
+    try:
+        return _store().save_storyboard(
+            job.id, plan, expected_updated_at=body.expected_updated_at,
+            allowed_statuses=(JobStatus.SCRIPT_REVIEW, JobStatus.FAILED),
+            status=JobStatus.QUEUED if render else JobStatus.SCRIPT_REVIEW,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.put("/api/jobs/{job_id}/storyboard")
+def update_storyboard(job_id: str, body: StoryboardEditRequest, user: dict = Depends(_require_user)) -> dict:
+    job = _owned_job(job_id, user)
+    plan = _validated_edit(job, body)
+    saved = _save_plan(job, plan, body)
+    return {"ok": True, "job": _job_payload(saved), "message": "Script saved."}
+
+
+@app.post("/api/jobs/{job_id}/revise")
+async def revise_campaign(job_id: str, body: StoryboardRevisionRequest, user: dict = Depends(_require_user)) -> dict:
+    job = _owned_job(job_id, user)
+    plan = _validated_edit(job, body)
+    try:
+        runtime = get_runtime()
+        settings = resolve_settings_for_account(user["id"], base=runtime.settings)
+        revised = await asyncio.to_thread(
+            revise_storyboard, settings, plan, body.action, brief=job.brief, sources=job.sources,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Agent runtime not ready.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc) if isinstance(exc, ValueError) else "Could not revise the script. Please try again.") from exc
+    saved = _save_plan(job, revised, body)
+    return {"ok": True, "job": _job_payload(saved), "message": "Script revised."}
+
+
+@app.post("/api/jobs/{job_id}/render")
+async def render_campaign(job_id: str, body: StoryboardEditRequest, user: dict = Depends(_require_user)) -> dict:
+    job = _owned_job(job_id, user)
+    plan = _validated_edit(job, body)
+    try:
+        runtime = get_runtime()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Agent runtime not ready.") from exc
+    saved = _save_plan(job, plan, body, render=True)
+    runtime.start_job(saved.id)
+    return {"ok": True, "job": _job_payload(saved), "message": "Video generation started. Watch Telegram for the final approval."}
+
+
+@app.get("/api/jobs/{job_id}/assets/{asset_id}")
+def get_job_asset(job_id: str, asset_id: str, user: dict = Depends(_require_user)) -> FileResponse:
+    job = _owned_job(job_id, user)
+    assets = [source for source in job.sources if source.kind == "file"]
+    if not asset_id.isdigit() or str(int(asset_id)) != asset_id or int(asset_id) >= len(assets):
+        raise HTTPException(status_code=404, detail="Image not found")
+    path = Path(assets[int(asset_id)].value).resolve()
+    try:
+        settings = resolve_settings_for_account(user["id"], base=get_runtime().settings)
+        path.relative_to(settings.uploads_dir.resolve() / job.id)
+    except (ValueError, RuntimeError):
+        raise HTTPException(status_code=404, detail="Image not found")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(path)
+
+
+@app.get("/api/jobs/{job_id}/video")
+def get_job_video(job_id: str, user: dict = Depends(_require_user)) -> FileResponse:
+    job = _owned_job(job_id, user)
+    if not job.video_path:
+        raise HTTPException(status_code=404, detail="Video not ready")
+    path = Path(job.video_path).resolve()
+    try:
+        settings = resolve_settings_for_account(user["id"], base=get_runtime().settings)
+        path.relative_to(settings.videos_dir.resolve())
+    except (ValueError, RuntimeError):
+        raise HTTPException(status_code=404, detail="Video not found")
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Video not found")
+    return FileResponse(path, media_type="video/mp4")
+
+
+@app.post("/api/jobs/{job_id}/redraft")
+async def redraft_campaign(job_id: str, body: RedraftRequest, user: dict = Depends(_require_user)) -> dict:
+    original = _owned_job(job_id, user)
+    if not original.storyboard:
+        raise HTTPException(status_code=409, detail="This campaign has no saved scene plan.")
+    if original.status in {JobStatus.QUEUED, JobStatus.GENERATING, JobStatus.POSTING, JobStatus.COLLECTING}:
+        raise HTTPException(status_code=409, detail="Wait for this campaign to finish before creating a revision.")
+    try:
+        runtime = get_runtime()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail="Agent runtime not ready.") from exc
+    settings = resolve_settings_for_account(user["id"], base=runtime.settings)
+    plan = validate_storyboard(original.storyboard, language=original.language, sources=original.sources)
+    if body.action:
+        try:
+            plan = await asyncio.to_thread(
+                revise_storyboard, settings, plan, body.action, brief=original.brief, sources=original.sources,
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="Could not revise the script. Please try again.") from exc
+    copied = []
+    job = runtime.store.create_job(
+        chat_id=original.chat_id, user_id=original.user_id, brief=original.brief,
+        language=original.language, owner_account_id=user["id"], status=JobStatus.SCRIPT_REVIEW,
+    )
+    try:
+        for source in original.sources:
+            if source.kind != "file":
+                copied.append(source)
+                continue
+            source_path = Path(source.value).resolve()
+            source_path.relative_to(settings.uploads_dir.resolve() / original.id)
+            destination = settings.uploads_dir / job.id / source_path.name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            await asyncio.to_thread(shutil.copy2, source_path, destination)
+            copied.append(JobSource(kind="file", value=str(destination.resolve()), title=source.title))
+        saved = runtime.store.update(job.id, sources=copied, storyboard=plan, title=plan["title"], caption=plan["caption"])
+    except Exception as exc:
+        runtime.store.update(job.id, status=JobStatus.FAILED, error="Could not copy saved images for this revision.")
+        raise HTTPException(status_code=400, detail="Could not copy saved images for this revision.") from exc
+    return {"ok": True, "job": _job_payload(saved), "message": "A new script draft is ready. Your previous video is unchanged."}
 
 
 def _spa_index() -> FileResponse:

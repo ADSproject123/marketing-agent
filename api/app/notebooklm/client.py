@@ -11,14 +11,36 @@ from notebooklm import NotebookLMClient, VideoFormat, VideoStyle
 
 from app.config import Settings
 from app.jobs.store import JobSource
+from app.uploads import build_brand_assets_pdf
 
 logger = logging.getLogger(__name__)
 
 YOUTUBE_RE = re.compile(r"(youtube\.com|youtu\.be)", re.IGNORECASE)
+_PLACEHOLDER_HOSTS = frozenset({
+    "example.com",
+    "example.org",
+    "example.net",
+    "localhost",
+    "127.0.0.1",
+    "0.0.0.0",
+})
 
 
 class NotebookLMAuthError(RuntimeError):
     """Raised when NotebookLM cookies are missing or expired."""
+
+
+def _is_placeholder_url(value: str) -> bool:
+    """Demo / fake hosts that NotebookLM cannot crawl."""
+    try:
+        host = (urlparse(value).hostname or "").lower().rstrip(".")
+    except Exception:
+        return False
+    if not host:
+        return False
+    if host.startswith("www."):
+        host = host[4:]
+    return host in _PLACEHOLDER_HOSTS or host.endswith(".example.com")
 
 
 def check_auth() -> bool:
@@ -72,6 +94,27 @@ def _video_style(name: str) -> VideoStyle:
     return mapping.get(key, VideoStyle.AUTO_SELECT)
 
 
+def _khmer_caption_instructions(*, title: str, caption: str) -> str:
+    """NotebookLM has no native `km` video language — force burned-in Khmer captions."""
+    title = (title or "").strip()
+    caption = (caption or "").strip()
+    lines = [
+        "CRITICAL CAPTION RULES FOR KHMER:",
+        "- Show large burned-in Khmer captions / subtitles on screen for the entire video.",
+        "- Every spoken line must also appear as Khmer on-screen text (subtitles / titles in Khmer script).",
+        "- Do not leave the video without readable Khmer text overlays.",
+        "- Prefer short phrases, high contrast, TikTok-style captions.",
+    ]
+    if title:
+        lines.append(f"- Title card / recurring on-screen title: {title}")
+    if caption:
+        lines.append(f"- Use this social caption as the main on-screen caption script:\n{caption}")
+    lines.append(
+        "Make the video in Khmer language with visible Khmer captions throughout."
+    )
+    return "\n".join(lines)
+
+
 async def generate_video_overview(
     settings: Settings,
     *,
@@ -80,6 +123,10 @@ async def generate_video_overview(
     sources: list[JobSource],
     steering_prompt: str,
     video_format: str,
+    language: str | None = None,
+    title: str | None = None,
+    caption: str | None = None,
+    narration_script: str | None = None,
     progress_callback=None,
 ) -> tuple[str, str, Path]:
     """
@@ -95,9 +142,14 @@ async def generate_video_overview(
         )
 
     notebook_name = f"Marketing Agent {job_id[:8]}"
+    language = (language or settings.video_language or "en").strip()
+    language_name = {"en": "English", "km": "Khmer (ខ្មែរ)"}.get(language, language)
     fmt = _video_format(video_format or settings.video_format)
     style = _video_style(settings.video_style)
     timeout = float(settings.video_timeout_minutes * 60)
+    title = (title or "").strip()
+    caption = (caption or "").strip()
+    narration_script = (narration_script or "").strip()
 
     async with NotebookLMClient.from_storage() as client:
         if progress_callback:
@@ -116,22 +168,99 @@ async def generate_video_overview(
         )
         source_ids.append(brief_source.id)
 
+        if narration_script:
+            narration_source = await client.sources.add_text(
+                notebook_id,
+                "Approved spoken narration",
+                (
+                    f"Read these lines verbatim in {language_name}, in scene order:\n"
+                    f"{narration_script}\n\n"
+                    "This is the spoken script, separate from the social post caption. "
+                    "Do not add extra spoken lines. Captions will be added in the editing pass."
+                ),
+                wait=True,
+                wait_timeout=180,
+            )
+            source_ids.append(narration_source.id)
+        elif language == "km" and (title or caption):
+            caption_doc = "\n\n".join(
+                part
+                for part in (
+                    f"TITLE:\n{title}" if title else "",
+                    f"SOCIAL CAPTION / ON-SCREEN SCRIPT:\n{caption}" if caption else "",
+                    "REQUIREMENT:\nShow these Khmer lines as burned-in on-screen captions "
+                    "throughout the short vertical video.",
+                )
+                if part
+            )
+            caption_source = await client.sources.add_text(
+                notebook_id,
+                "Khmer on-screen captions",
+                caption_doc,
+                wait=True,
+                wait_timeout=180,
+            )
+            source_ids.append(caption_source.id)
+
+        file_sources = [src for src in sources if src.kind == "file"]
+        failed_image_paths: list[Path] = []
+
         for src in sources:
             try:
                 if src.kind == "url" and _is_url(src.value):
-                    if YOUTUBE_RE.search(src.value):
-                        created = await client.sources.add_url(notebook_id, src.value)
-                    else:
-                        created = await client.sources.add_url(notebook_id, src.value)
+                    if _is_placeholder_url(src.value):
+                        # example.com / localhost demos are not crawlable — keep as text.
+                        created = await client.sources.add_text(
+                            notebook_id,
+                            (src.title or "Website link")[:120],
+                            (
+                                f"Brand website / CTA link (do not invent a different URL): "
+                                f"{src.value}\n"
+                                "Use this link only for on-screen CTA text if needed. "
+                                "There is no real web page content to scrape."
+                            ),
+                            wait=True,
+                            wait_timeout=180,
+                        )
+                        source_ids.append(created.id)
+                        if progress_callback:
+                            await progress_callback(
+                                f"Skipped crawling placeholder URL {src.value} "
+                                "(kept as a text link)."
+                            )
+                        continue
+                    created = await client.sources.add_url(notebook_id, src.value)
                     ready = await client.sources.wait_until_ready(
                         notebook_id, created.id, timeout=180
                     )
                     source_ids.append(ready.id)
-                elif src.kind in {"text", "file"}:
-                    title = (src.title or "Source")[:120]
+                elif src.kind == "file":
+                    path = Path(src.value)
+                    if not path.is_file():
+                        raise FileNotFoundError(f"Brand asset missing: {path}")
+                    source_title = (src.title or path.name or "Brand asset")[:120]
+                    try:
+                        created = await client.sources.add_file(
+                            notebook_id,
+                            path,
+                            wait=True,
+                            wait_timeout=180,
+                            title=source_title,
+                        )
+                        source_ids.append(created.id)
+                    except Exception:
+                        logger.exception("Direct image upload failed for %s", path)
+                        failed_image_paths.append(path)
+                        if progress_callback:
+                            await progress_callback(
+                                f"Warning: could not upload image {path.name}; "
+                                "will try PDF brand pack."
+                            )
+                elif src.kind == "text":
+                    source_title = (src.title or "Source")[:120]
                     created = await client.sources.add_text(
                         notebook_id,
-                        title,
+                        source_title,
                         src.value,
                         wait=True,
                         wait_timeout=180,
@@ -144,6 +273,34 @@ async def generate_video_overview(
                 if progress_callback:
                     await progress_callback(f"Warning: could not add source ({src.kind})")
 
+        if failed_image_paths:
+            all_brand_paths = [
+                Path(src.value) for src in file_sources if Path(src.value).is_file()
+            ] or failed_image_paths
+            try:
+                pdf_path = build_brand_assets_pdf(
+                    all_brand_paths,
+                    settings.uploads_dir / job_id / "brand-assets.pdf",
+                )
+                created = await client.sources.add_file(
+                    notebook_id,
+                    pdf_path,
+                    wait=True,
+                    wait_timeout=180,
+                    title="Brand assets",
+                )
+                source_ids.append(created.id)
+                if progress_callback:
+                    await progress_callback(
+                        "Uploaded brand images as a PDF pack for NotebookLM."
+                    )
+            except Exception:
+                logger.exception("Failed to upload brand assets PDF for job %s", job_id)
+                if progress_callback:
+                    await progress_callback(
+                        "Warning: could not add brand images to NotebookLM."
+                    )
+
         if len(source_ids) < 1:
             raise RuntimeError("No sources available for NotebookLM video generation")
 
@@ -153,21 +310,58 @@ async def generate_video_overview(
 
         instructions = steering_prompt or ""
         if "vertical" not in instructions.lower() and "tiktok" not in instructions.lower():
-            instructions = (
+            vertical_instruction = (
+                "បង្កើតវីដេអូខ្លីបែប TikTok/Reels ក្នុងទម្រង់បញ្ឈរ 9:16។ "
+                "កាត់ឈុតរហ័ស ទាក់ទាញអ្នកទស្សនាក្នុង 3 វិនាទីដំបូង និងរក្សាវីដេអូឱ្យខ្លី។ "
+                if language == "km"
+                else
                 "Create a short vertical TikTok/Reels-style video in a portrait mobile frame. "
                 "Fast pacing, hook in the first 3 seconds, keep it brief. "
-                + instructions
+            )
+            instructions = (vertical_instruction + instructions).strip()
+        if file_sources:
+            asset_names = ", ".join(
+                (src.title or Path(src.value).name) for src in file_sources[:5]
+            )
+            brand_line = (
+                "Feature the uploaded brand logo and product photos on screen "
+                f"({asset_names}). Use these exact assets; do not invent a different logo "
+                "or substitute unrelated product imagery."
+            )
+            instructions = f"{instructions}\n{brand_line}".strip()
+        if language == "km":
+            caption_instruction = (
+                "អានស្គ្រីបដែលបានអនុម័តតាមលំដាប់ឈុត។ "
+                "កុំអានសារផ្សព្វផ្សាយសម្រាប់បង្ហោះ។ "
+                "អក្សររត់នឹងត្រូវបានបន្ថែមនៅពេលកែសម្រួលវីដេអូ។\n\n"
+                "Make the video in Khmer language."
+                if narration_script else _khmer_caption_instructions(title=title, caption=caption)
+            )
+            instructions = (
+                f"{instructions}\nប្រើភាសាខ្មែរសម្រាប់ការនិយាយ សន្ទនា ចំណងជើង អក្សររត់ "
+                "និងអត្ថបទទាំងអស់ក្នុងវីដេអូ។ ប្រើអក្សរខ្មែរ "
+                "ហើយរក្សាឈ្មោះម៉ាក និងតំណភ្ជាប់ដើមតាមការចាំបាច់។\n\n"
+                f"{caption_instruction}"
+            ).strip()
+        else:
+            instructions = (
+                f"{instructions}\nOutput language: {language_name} ({language}). "
+                f"Use {language_name} for all narration, dialogue, headings, subtitles, "
+                "and on-screen text throughout the video, regardless of the source language. "
+                "Use native script. Preserve proper brand names and URLs where needed."
             ).strip()
 
         if progress_callback:
             await progress_callback(
-                "Starting NotebookLM Short video (TikTok-style — can take several minutes)…"
+                f"Requesting NotebookLM Short video in {language_name} "
+                "(TikTok-style — can take several minutes)…"
             )
 
         status = await client.artifacts.generate_video(
             notebook_id,
             source_ids=source_ids,
-            language=settings.video_language,
+            # Khmer output is guided by its script and final prompt instruction.
+            language="en" if language == "km" else language,
             instructions=instructions or None,
             video_format=fmt,
             video_style=style,

@@ -1,20 +1,20 @@
 export const STEPS = {
   system: {
     title: "System",
-    subtitle: "One tap",
-    detail: "You hit Start. No brief, no sources — the agent takes it from here.",
+    subtitle: "Campaign details",
+    detail: "Your business, audience, offer, and video direction become the campaign brief.",
   },
   gemini: {
     title: "Gemini",
-    subtitle: "Invent campaign",
+    subtitle: "Review script",
     detail:
-      "Invents the brief, social caption, NotebookLM steering, and the source script used for the video.",
+      "Creates three hooks and a scene plan for your review in your chosen language.",
   },
   notebooklm: {
     title: "NotebookLM",
     subtitle: "Short video",
     detail:
-      "Uses Gemini’s source text only — builds a TikTok-frame vertical short and downloads the MP4.",
+      "Renders your approved scene plan, adds captions and a business end card, and checks the finished video.",
   },
   telegram: {
     title: "Telegram",
@@ -81,7 +81,7 @@ export const ACTIVE_STATUSES = new Set([
   "posting",
 ]);
 
-export function computeLayout() {
+export function computeLayout(direction = "horizontal") {
   const ranks = [
     ["system"],
     ["gemini"],
@@ -93,32 +93,44 @@ export function computeLayout() {
   ];
   const nodes = {};
   let x = PAD;
+  let y = PAD;
   let maxHeight = 0;
+  const vertical = direction === "vertical";
+  const maxWidth = Math.max(...ranks.map((rank) => rank.length * NODE_W + (rank.length - 1) * NODE_GAP));
 
   ranks.forEach((rank) => {
     const blockH = rank.length * NODE_H + (rank.length - 1) * NODE_GAP;
     maxHeight = Math.max(maxHeight, blockH);
-    const startY = PAD + (Math.max(blockH, NODE_H * 2 + NODE_GAP) - blockH) / 2;
-    rank.forEach((id, i) => {
-      nodes[id] = { id, x, y: startY + i * (NODE_H + NODE_GAP) };
-    });
-    x += NODE_W + RANK_GAP;
+    if (vertical) {
+      const blockW = rank.length * NODE_W + (rank.length - 1) * NODE_GAP;
+      const startX = PAD + (maxWidth - blockW) / 2;
+      rank.forEach((id, i) => {
+        nodes[id] = { id, x: startX + i * (NODE_W + NODE_GAP), y };
+      });
+      y += NODE_H + 38;
+    } else {
+      const startY = PAD + (Math.max(blockH, NODE_H * 2 + NODE_GAP) - blockH) / 2;
+      rank.forEach((id, i) => {
+        nodes[id] = { id, x, y: startY + i * (NODE_H + NODE_GAP) };
+      });
+      x += NODE_W + RANK_GAP;
+    }
   });
 
-  const height = Math.max(maxHeight, NODE_H * 2 + NODE_GAP) + PAD * 2;
-  const width = x - RANK_GAP + PAD;
+  const height = vertical ? y - 38 + PAD : Math.max(maxHeight, NODE_H * 2 + NODE_GAP) + PAD * 2;
+  const width = vertical ? maxWidth + PAD * 2 : x - RANK_GAP + PAD;
   const edges = EDGES.map((e) => {
     const a = nodes[e.from];
     const b = nodes[e.to];
     return {
       ...e,
-      sourceX: a.x + NODE_W,
-      sourceY: a.y + NODE_H / 2,
-      targetX: b.x,
-      targetY: b.y + NODE_H / 2,
+      sourceX: a.x + (vertical ? NODE_W / 2 : NODE_W),
+      sourceY: a.y + (vertical ? NODE_H : NODE_H / 2),
+      targetX: b.x + (vertical ? NODE_W / 2 : 0),
+      targetY: b.y + (vertical ? 0 : NODE_H / 2),
     };
   });
-  return { nodes, edges, width, height };
+  return { nodes, edges, width, height, direction };
 }
 
 export function stageForJob(job) {
@@ -126,6 +138,7 @@ export function stageForJob(job) {
   if (job.stage) return job.stage;
   const status = job.status;
   if (status === "queued" || status === "collecting") return "system";
+  if (status === "script_review") return "gemini";
   if (status === "generating") return job.title ? "notebooklm" : "gemini";
   if (status === "awaiting_approval") return "telegram";
   if (status === "posting") return "facebook";
@@ -238,19 +251,20 @@ export function liveDetailFor(job, nodeId) {
   const status = job.status;
 
   if (nodeId === "system") {
-    if (["queued", "collecting"].includes(status)) return "Start received — handing off to Gemini.";
-    return "Started with one tap. Gemini invents everything.";
+    if (["queued", "collecting"].includes(status)) return "Your campaign is queued for generation.";
+    return "Your business, audience, offer and creative direction are saved with this campaign.";
   }
   if (nodeId === "gemini") {
+    if (status === "script_review") return "Choose an opening hook and review the scenes before generating your video.";
     if (stage === "gemini" && status === "generating") {
-      return "Gemini is inventing the campaign, caption, and video source…";
+      return "Drafting the campaign caption and script from your brief…";
     }
     if (job.title) return `Title ready: ${job.title}`;
     return STEPS.gemini.detail;
   }
   if (nodeId === "notebooklm") {
     if (stage === "notebooklm" && status === "generating") {
-      return "Generating vertical short from Gemini’s script (TikTok frame). Several minutes…";
+      return "Rendering the reviewed script, then adding captions and checking the output. This can take several minutes.";
     }
     if (job.video_path) return "Short MP4 downloaded and ready for preview.";
     if (job.title) return "Gemini done — waiting on NotebookLM short video.";

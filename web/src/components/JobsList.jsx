@@ -16,7 +16,7 @@ export default function JobsList({ jobs, activeJobId, error, onSelect, onRefresh
         </button>
       </div>
       <p className="jobs-note">
-        Select a campaign to see its details. Reviews and approvals happen in Telegram.
+        Select a campaign to review its script, preview the video, or make a revision. Publishing approvals happen in Telegram.
       </p>
 
       <div className="jobs-list">

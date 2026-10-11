@@ -1,6 +1,46 @@
-import { Link } from "react-router-dom";
+import { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { redraftStoryboard, retryCampaignDraft } from "../api";
 import { formatTime, liveDetailFor, stageForJob, STEPS } from "../flow";
 import Icon from "./Icon";
+import QualityReport from "./QualityReport";
+import VideoPreview from "./VideoPreview";
+
+function ScriptActions({ job }) {
+  const navigate = useNavigate();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const retryScript = job.status === "failed" && !job.storyboard &&
+    ["BUSINESS CAMPAIGN BRIEF", "សេចក្តីសង្ខេបយុទ្ធនាការអាជីវកម្ម"].some((heading) => (job.brief || "").startsWith(heading));
+  if (!job.storyboard && !retryScript) return null;
+  async function prepareDraft(retry = false) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = retry
+        ? await retryCampaignDraft(job.id, job.updated_at)
+        : await redraftStoryboard(job.id);
+      navigate(`/dashboard/compose?draft=${encodeURIComponent(response.job.id)}`);
+    } catch (err) {
+      setError(err.message || "Could not prepare the script.");
+      setBusy(false);
+    }
+  }
+  if (retryScript) {
+    return <div className="detail-actions"><button type="button" className="primary-btn" disabled={busy} onClick={() => prepareDraft(true)}>{busy ? "Generating script…" : "Retry script"}</button>{error ? <p className="detail-error" role="alert">{error}</p> : null}</div>;
+  }
+  if (["script_review", "failed"].includes(job.status)) {
+    return <div className="detail-actions"><Link className="primary-btn" to={`/dashboard/compose?draft=${encodeURIComponent(job.id)}`}>Review script</Link></div>;
+  }
+  if (!["awaiting_approval", "posted", "denied", "cancelled"].includes(job.status)) return null;
+  return (
+    <div className="detail-actions">
+      <button type="button" className="ghost-btn" disabled={busy} onClick={() => prepareDraft()}>{busy ? "Preparing revision…" : "Revise video"}</button>
+      {error ? <p className="detail-error" role="alert">{error}</p> : null}
+    </div>
+  );
+}
 
 export default function JobDetail({ job }) {
   if (!job) {
@@ -38,6 +78,7 @@ export default function JobDetail({ job }) {
         </span>
       </div>
 
+      <ScriptActions key={job.id} job={job} />
       <dl className="detail-grid">
         <div>
           <dt>Campaign ID</dt>
@@ -60,7 +101,7 @@ export default function JobDetail({ job }) {
         </div>
         {job.caption ? (
           <div className="detail-span">
-            <dt className="detail-caption-head"><Icon name="file" size={15} /> Generated caption</dt>
+            <dt className="detail-caption-head"><Icon name="file" size={15} /> Social post caption</dt>
             <dd className="detail-caption">{job.caption}</dd>
           </div>
         ) : null}
@@ -69,7 +110,7 @@ export default function JobDetail({ job }) {
             <dt>Generated video</dt>
             <dd>
               <span className="detail-preview"><Icon name="circle-check" size={18} /> Video generated</span>
-              <span className="detail-sub mono">{job.video_path}</span>
+              <VideoPreview key={job.id} job={job} />
             </dd>
           </div>
         ) : null}
@@ -90,6 +131,7 @@ export default function JobDetail({ job }) {
           </div>
         ) : null}
       </dl>
+      <QualityReport report={job.quality_report} />
     </section>
   );
 }

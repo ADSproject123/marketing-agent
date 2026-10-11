@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
 
@@ -13,6 +14,7 @@ from app.facebook.poster import post_page_video
 from app.integrations.resolve import resolve_settings_for_account
 from app.jobs.store import Job, JobSource, JobStatus, JobStore
 from app.llm.caption import draft_caption_package
+from app.llm.storyboard_render import narration_from_storyboard, package_from_storyboard
 from app.notebooklm.client import NotebookLMAuthError, generate_video_overview
 from app.telegram_bot.messages import approval_keyboard, format_preview_caption
 
@@ -54,8 +56,19 @@ class Pipeline:
                 logger.exception("Failed to send progress to Telegram")
 
         try:
-            await notify("Gemini drafting campaign, caption, and video source…")
-            package = draft_caption_package(settings, job.brief, job.sources)
+            storyboard = getattr(job, "storyboard", None)
+            if storyboard:
+                from app.storyboards import effective_storyboard
+
+                storyboard = effective_storyboard(storyboard)
+                await notify("Rendering your reviewed script and selected opening hook…")
+                package = package_from_storyboard(job.brief, storyboard, job.sources)
+            else:
+                await notify("Gemini drafting campaign, caption, and video source…")
+                package = await asyncio.to_thread(
+                    draft_caption_package,
+                    settings, job.brief, job.sources, language=job.language,
+                )
             # Keep user URLs/notes, plus Gemini's generated script for NotebookLM.
             merged_sources = list(job.sources) + [
                 JobSource(
@@ -64,15 +77,15 @@ class Pipeline:
                     title="Gemini campaign source",
                 )
             ]
-            self.store.update(
-                job_id,
-                brief=package.brief,
+            fields = dict(
                 caption=package.caption,
                 title=package.title,
                 steering_prompt=package.steering_prompt,
                 video_format=package.video_format,
-                sources=merged_sources,
             )
+            if not storyboard:
+                fields.update(brief=package.brief, sources=merged_sources)
+            self.store.update(job_id, **fields)
 
             video_path: Path | None = None
             if settings.skip_notebooklm:
@@ -81,6 +94,9 @@ class Pipeline:
                 )
                 self.store.update(job_id, status=JobStatus.AWAITING_APPROVAL)
             else:
+                video_arguments = dict(
+                    narration_script=narration_from_storyboard(storyboard)
+                ) if storyboard else {}
                 notebook_id, artifact_id, video_path = await generate_video_overview(
                     settings,
                     job_id=job_id,
@@ -88,8 +104,38 @@ class Pipeline:
                     sources=merged_sources,
                     steering_prompt=package.steering_prompt,
                     video_format=package.video_format,
+                    language=job.language,
+                    title=package.title,
+                    caption=package.caption,
                     progress_callback=notify,
+                    **video_arguments,
                 )
+                if storyboard:
+                    from app.video_finishing import finish_video
+
+                    await notify("Adding script captions and your business end card; checking the finished video…")
+                    self.store.update(job_id, notebook_id=notebook_id, artifact_id=artifact_id)
+                    try:
+                        video_path, report = await asyncio.to_thread(
+                            finish_video, video_path, storyboard, job.sources,
+                        )
+                    except Exception as exc:
+                        self.store.update(job_id, quality_report={
+                            "processed": False,
+                            "checks": [{
+                                "id": "finishing", "label": "Video finishing", "status": "fail",
+                                "detail": str(exc),
+                            }],
+                            "metadata": {},
+                        })
+                        raise
+                    self.store.update(job_id, quality_report=report)
+                    failures = [
+                        check["label"] for check in report.get("checks", [])
+                        if check.get("status") == "fail"
+                    ]
+                    if failures:
+                        raise RuntimeError("Video checks need attention: " + ", ".join(failures))
                 self.store.update(
                     job_id,
                     notebook_id=notebook_id,
@@ -111,7 +157,8 @@ class Pipeline:
                 await notify("Ready for review — Approve posts to Facebook, Deny cancels.")
             else:
                 await notify(
-                    "Ready for review — Facebook is not configured yet. "
+                    "Ready for review — Facebook Page not configured yet "
+                    "(need FACEBOOK_PAGE_ID + FACEBOOK_PAGE_ACCESS_TOKEN in .env). "
                     "Approve will mark the job done without posting."
                 )
         except NotebookLMAuthError as exc:
@@ -196,7 +243,8 @@ class Pipeline:
                 text=(
                     f"Approved job {job_id[:8]}.\n"
                     "Facebook is not configured, so nothing was posted.\n"
-                    "Add Facebook credentials in Dashboard → Settings."
+                    "Set FACEBOOK_PAGE_ID and FACEBOOK_PAGE_ACCESS_TOKEN in the server .env "
+                    "(App ID + App Secret alone are not enough to post)."
                 ),
             )
             return

@@ -9,13 +9,14 @@ const NAV = [
   { to: "/dashboard/compose", label: "Create campaign", icon: "sparkles" },
   { to: "/dashboard/pipeline", label: "Live pipeline", icon: "activity" },
   { to: "/dashboard/jobs", label: "Campaign history", icon: "layers" },
-  { to: "/dashboard/settings", label: "Integrations", icon: "lock" },
+  // Integrations UI hidden for now — use server .env instead
+  // { to: "/dashboard/settings", label: "Integrations", icon: "lock" },
   { to: "/dashboard/guide", label: "Getting started", icon: "book" },
 ];
 
 export default function DashboardSidebar({ open, onClose }) {
   const { user, logout } = useAuth();
-  const { online, healthLabel, liveCount } = useDashboard();
+  const { liveCount } = useDashboard();
   const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 900px)").matches);
   const sidebarRef = useRef(null);
   const closeRef = useRef(null);
@@ -111,12 +112,6 @@ export default function DashboardSidebar({ open, onClose }) {
           </button>
         </div>
 
-        <div className="dash-workspace">
-          <span className="dash-workspace-icon"><Icon name="layers" size={18} /></span>
-          <div><strong>Your workspace</strong><span>Campaign management</span></div>
-        </div>
-
-        <p className="dash-nav-label">Workspace</p>
         <nav className="dash-side-nav" aria-label="Primary navigation">
           {NAV.map((item) => (
             <NavLink
@@ -138,19 +133,9 @@ export default function DashboardSidebar({ open, onClose }) {
         </nav>
 
         <div className="dash-sidebar-foot">
-          <div className="dash-review-note">
-            <Icon name="shield" size={20} />
-            <strong>You're in control</strong>
-            <p>Review your video and approve every campaign in Telegram.</p>
-            <NavLink to="/dashboard/guide" onClick={onClose}>See how it works <Icon name="arrow-right" size={15} /></NavLink>
-          </div>
-          <div className={`sys-status ${online ? "is-online" : "is-offline"}`} title={healthLabel}>
-            <span className="sys-status-dot" aria-hidden="true" />
-            <span className="sys-status-label">{healthLabel.startsWith("checking") ? "Connecting to service" : online ? "Campaign service connected" : "Campaign service offline"}</span>
-          </div>
           <div className="dash-sidebar-user">
             <span className="dash-user-avatar" aria-hidden="true">{initials}</span>
-            <div>
+            <div className="dash-user-info">
               <p className="dash-user-name">{user?.name || "Your account"}</p>
               <p className="dash-user-email">{user?.email}</p>
             </div>
