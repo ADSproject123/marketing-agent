@@ -128,6 +128,7 @@ class Settings:
     uploads_dir: Path
     downloads_dir: Path
     db_path: Path
+    cleanup_notebooks: bool = True
 
     @property
     def gemini_api_key(self) -> str | None:
@@ -167,6 +168,7 @@ def get_settings() -> Settings:
         uploads_dir=UPLOADS_DIR,
         downloads_dir=DOWNLOADS_DIR,
         db_path=DB_PATH,
+        cleanup_notebooks=_flag("NOTEBOOKLM_CLEANUP", default=True),
     )
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.videos_dir.mkdir(parents=True, exist_ok=True)

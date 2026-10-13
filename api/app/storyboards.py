@@ -346,8 +346,13 @@ Honor target_duration_seconds from the user prompt when provided (default ~30s).
 - Scene 1 (The Hook): 2-5s. Selected hook text verbatim as narration.
 - Middle scenes: deepen need, show product/service, proof or convenience. Map to uploaded asset_id when relevant; null means generated footage.
 - Final scene (CTA): clear singular action + exact contact destination; include the actual offer when provided.
-visual_direction MUST follow: [Shot Type & Camera Move] + [Subject Action] + [Lighting & Environment].
-Example: "Macro slow-motion: espresso crema dripping into a ceramic cup, warm cinematic backlighting."
+visual_direction MUST follow: [Shot Type & Camera Move] + [Concrete Subject Action] + [Lighting & Atmosphere].
+Write photographic descriptors that prompt the AI video generator for crisp, clean footage:
+- Camera movement & framing: "Macro slow-motion 60fps", "Low-angle dynamic tracking shot", "Top-down aesthetic flat-lay", "Cinematic eye-level push-in".
+- Lighting & atmosphere: "Warm golden-hour rim lighting", "Crisp high-end studio commercial lighting", "Soft morning window light with shallow depth of field".
+- Physics & detail: "Steam rising subtly", "Smooth steady-cam gliding motion", "Rich textures and vibrant color grading".
+- NEVER write vague abstracts like "Show the customer feeling happy" or "Show good service". Describe what the camera physically records.
+Example: "Macro slow-motion 60fps: golden espresso crema dripping into a minimalist ceramic cup, warm morning backlighting, shallow depth of field with soft bokeh."
 
 Return only JSON conforming to the supplied schema. No markdown fences. Write the requested native language."""
 
@@ -386,7 +391,11 @@ _KM_INSTRUCTIONS = """អ្នកជាអ្នកដឹកនាំច្ន�
 - ឈុតទី ១ (The Hook): ២.៥ ទៅ ៣.៥ វិនាទី ប្រើ Hook ដែលបានជ្រើសរើសជា narration។
 - ឈុតកណ្ដាល៖ បង្ហាញផលិតផល សេវាកម្ម ឬបរិយាកាសជាក់ស្ដែង។ ភ្ជាប់ទៅ asset_id បើមានរូបភាពសមស្រប បើគ្មានដាក់ null។
 - ឈុតបញ្ចប់ (CTA): ៣ ទៅ ៤ វិនាទី អំពាវនាវឱ្យធ្វើសកម្មភាពច្បាស់លាស់ បញ្ជាក់ទីតាំង ឬទំនាក់ទំនង/តេលេក្រាមពិតប្រាកដ។
-- visual_direction: សរសេរសេចក្តីណែនាំប្លង់កាមេរ៉ាខ្លីច្បាស់លាស់ជាភាសាអង់គ្លេសសម្រាប់ម៉ាស៊ីនផលិតវីដេអូ (Shot Type, Action, Lighting) ដូចជា "Macro close-up: ...", "Cinematic panning shot: ...".
+- visual_direction: សរសេរសេចក្តីណែនាំប្លង់កាមេរ៉ាភាពយន្តជាភាសាអង់គ្លេសច្បាស់ៗសម្រាប់ម៉ាស៊ីនផលិតវីដេអូ AI (Camera Framing & Move + Subject Action + Lighting & Atmosphere)៖
+  * ប្រើពាក្យបច្ចេកទេសកាមេរ៉ា៖ "Macro slow-motion 60fps", "Low-angle dynamic tracking shot", "Top-down aesthetic flat-lay", "Cinematic eye-level push-in"
+  * ពន្លឺ និងបរិយាកាស៖ "Warm golden-hour rim lighting", "Crisp studio commercial lighting", "Shallow depth of field with soft bokeh"
+  * ហាមសរសេរពាក្យអរូបីដូចជា "Show happy customer"។ ត្រូវពណ៌នារូបភាពដែលកាមេរ៉ាមើលឃើញពិតប្រាកដ។
+  * ឧទាហរណ៍៖ "Macro slow-motion 60fps: golden broth poured into a steaming ceramic bowl, fresh aromatic herbs, warm cinematic rim lighting, shallow depth of field."
 
 ឆ្លើយតបជា JSON សុទ្ធតាម schema ដែលបានផ្ដល់។ រក្សា JSON keys ជាភាសាអង់គ្លេស។
 Make the video in Khmer language.

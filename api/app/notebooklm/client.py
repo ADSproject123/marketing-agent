@@ -172,9 +172,14 @@ async def generate_video_overview(
                 notebook_id,
                 "Approved spoken narration",
                 (
+                    f"### CANONICAL SPOKEN VOICEOVER SCRIPT (Read verbatim in {language_name}, in scene order):\n"
                     f"Read these lines verbatim in {language_name}, in scene order:\n"
                     f"{narration_script}\n\n"
-                    "This is the spoken script, separate from the social post caption. "
+                    "CRITICAL PRODUCTION RULES:\n"
+                    "- Read these lines verbatim in order. Do not invent extra spoken lines.\n"
+                    "- Solo commercial brand voiceover only (NOT a podcast, no co-hosts, no conversational banter).\n"
+                    "- Begin speaking the hook immediately on exact second 0.0.\n"
+                    "- This is the spoken script, separate from the social post caption. "
                     "Do not add extra spoken lines. Captions will be added in the editing pass."
                 ),
                 wait=True,
@@ -350,6 +355,10 @@ async def generate_video_overview(
             instructions = (
                 f"{instructions}\nOutput language: {language_name} ({language}). "
                 f"Use {language_name} for spoken narration / voiceover only. "
+                "FORMAT: Commercial advertisement (NOT a podcast). "
+                "SPEAKER: Exactly ONE solo brand voiceover narrator. Zero co-hosts. Zero dialogue. "
+                "Start immediately with Shot 1 voiceover on exact second 0.0. "
+                "NO intro greetings ('Welcome to', 'Hey everyone', 'Today we are looking at'). "
                 "CRITICAL: produce CLEAN footage with ZERO on-screen text. "
                 "Do NOT burn captions, subtitles, titles, headings, lower-thirds, text boxes, "
                 "brown/black caption bars, or business-name pills "
@@ -444,5 +453,13 @@ async def generate_video_overview(
             raise last_download_error
         if not dest.exists() or dest.stat().st_size < 1000:
             raise RuntimeError(f"Downloaded video missing or too small: {dest}")
+
+        # Clean up temporary notebook in Google account to prevent clutter
+        if getattr(settings, "cleanup_notebooks", True) and hasattr(client.notebooks, "delete"):
+            try:
+                await client.notebooks.delete(notebook_id)
+                logger.info("Cleaned up temporary NotebookLM notebook %s", notebook_id)
+            except Exception:
+                logger.warning("Could not delete temporary notebook %s", notebook_id, exc_info=True)
 
         return notebook_id, str(artifact_id), dest
