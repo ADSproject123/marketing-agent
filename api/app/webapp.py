@@ -128,7 +128,7 @@ def _spa_index() -> FileResponse:
 
 
 # Import jobs before campaign: campaign reuses jobs._create_job_impl.
-from app.routers import auth, campaign, health, jobs
+from app.routers import auth, campaign, health, jobs, schedules
 from app.routers import integrations as integrations_routes
 from app.routers import promotions as promotions_routes
 
@@ -138,6 +138,7 @@ app.include_router(promotions_routes.router)
 app.include_router(campaign.router)
 app.include_router(integrations_routes.router)
 app.include_router(jobs.router)
+app.include_router(schedules.router)
 
 
 @app.get("/")

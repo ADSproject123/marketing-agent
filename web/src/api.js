@@ -259,3 +259,39 @@ export async function selectFacebookPage(pageId) {
 export async function disconnectFacebook() {
   return api("/api/integrations/facebook", { method: "DELETE" });
 }
+
+export async function fetchSchedules() {
+  return api("/api/schedules");
+}
+
+export async function createSchedule(payload) {
+  return api("/api/schedules", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export async function updateSchedule(id, payload) {
+  return api(`/api/schedules/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    body: payload,
+  });
+}
+
+export async function toggleSchedule(id) {
+  return api(`/api/schedules/${encodeURIComponent(id)}/toggle`, {
+    method: "POST",
+  });
+}
+
+export async function runScheduleNow(id) {
+  return api(`/api/schedules/${encodeURIComponent(id)}/run-now`, {
+    method: "POST",
+  });
+}
+
+export async function deleteSchedule(id) {
+  return api(`/api/schedules/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}

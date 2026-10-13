@@ -9,6 +9,7 @@ const NAV = [
   { to: "/dashboard", end: true, label: "Overview", icon: "grid" },
   { to: "/dashboard/compose", label: "Make a video", icon: "sparkles" },
   { to: "/dashboard/weekly-plan", label: "Weekly plan", icon: "clock" },
+  { to: "/dashboard/schedules", label: "Schedules", icon: "calendar" },
   { to: "/dashboard/pipeline", label: "Live pipeline", icon: "activity" },
   { to: "/dashboard/jobs", label: "History", icon: "layers" },
   // { to: "/dashboard/settings", label: "Integrations", icon: "lock" },

@@ -56,6 +56,10 @@ async def run() -> None:
         port,
     )
 
+    from app.schedules.service import get_schedule_service
+    schedule_service = get_schedule_service()
+    schedule_service.start()
+
     config = uvicorn.Config(
         web_app,
         host=host,
@@ -67,6 +71,7 @@ async def run() -> None:
     try:
         await server.serve()
     finally:
+        schedule_service.shutdown()
         await hub.shutdown()
         await application.updater.stop()
         await application.stop()

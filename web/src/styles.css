@@ -3394,3 +3394,762 @@ main { flex: 1; width: min(100%, calc(var(--max) + var(--pad) * 2)); margin: 0 a
     left: calc(16px + env(safe-area-inset-left));
   }
 }
+
+/* ==========================================================================
+   Automated Schedules Page & Modal Styles
+   ========================================================================== */
+
+.schedules-page {
+  padding: var(--dashboard-pad);
+  max-width: 1300px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.schedules-header {
+  margin-bottom: 0;
+}
+
+/* Stats Row */
+.schedules-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.sched-stat-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.sched-stat-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: var(--teal);
+  flex-shrink: 0;
+}
+
+.sched-stat-icon.is-fb {
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.sched-stat-icon.is-next {
+  background: #ecfdf5;
+  color: #059669;
+}
+
+.sched-stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sched-stat-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sched-stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.2;
+}
+
+.sched-stat-value.is-next-val {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sched-stat-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Schedules Main & Grid */
+.schedules-main {
+  min-height: 300px;
+}
+
+.schedules-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 80px 20px;
+  color: #64748b;
+}
+
+.schedules-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 10px;
+  color: #991b1b;
+}
+
+.schedules-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(370px, 1fr));
+  gap: 18px;
+}
+
+/* Schedule Card */
+.sched-card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  overflow: hidden;
+}
+
+.sched-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px -4px rgba(15, 23, 42, 0.08);
+  border-color: #cbd5e1;
+}
+
+.sched-card.is-paused {
+  opacity: 0.85;
+  background: #fcfcfd;
+}
+
+.sched-card-head {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sched-card-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sched-toggle-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  font: 600 11px/1 var(--body);
+  color: #475569;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.sched-toggle-pill:hover {
+  background: #f1f5f9;
+}
+
+.sched-toggle-pill.active {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.sched-toggle-pill.paused {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.sched-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+}
+
+.sched-toggle-pill.paused .sched-pulse-dot {
+  background: #f59e0b;
+}
+
+.sched-time-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.sched-card-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.35;
+}
+
+.sched-card-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.sched-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.sched-badge.has-fb {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.sched-badge.is-review {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.sched-card-body {
+  padding: 14px 18px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.sched-brief-preview {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #475569;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.sched-card-meta-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.sched-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sched-meta-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.sched-meta-val {
+  font-size: 12px;
+  color: var(--ink);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sched-run-tag {
+  font-size: 10px;
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.sched-run-tag.success {
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.sched-run-tag.failed {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.sched-last-job-link {
+  font-size: 12px;
+}
+
+.sched-job-anchor {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--teal);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.sched-job-anchor:hover {
+  text-decoration: underline;
+}
+
+.sched-card-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--line-soft);
+  background: #fafafc;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sched-footer-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Modal Overlay & Card */
+.ui-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(8px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow-y: auto;
+  animation: modalFadeIn 160ms ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.sched-modal-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 620px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+  animation: modalSlideUp 180ms ease;
+  overflow: hidden;
+}
+
+@keyframes modalSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.ui-modal-head {
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ui-modal-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.ui-modal-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  background: #f1f5f9;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #64748b;
+  transition: all 120ms ease;
+}
+
+.ui-modal-close:hover {
+  background: #e2e8f0;
+  color: var(--ink);
+}
+
+.sched-modal-form {
+  padding: 18px 22px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Source Selector Tabs */
+.sched-source-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 4px;
+  background: #f1f5f9;
+  border-radius: 8px;
+}
+
+.sched-source-tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: 500 12px/1.3 var(--body);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.sched-source-tab.active {
+  background: #fff;
+  color: var(--teal);
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+}
+
+.sched-helper-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.sched-helper-box label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.sched-helper-empty {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.sched-weekly-roles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.sched-role-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.sched-role-btn:hover {
+  border-color: var(--teal);
+  background: #f8faff;
+}
+
+.sched-role-btn strong {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.sched-role-btn span {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.sched-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sched-form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.sched-form-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+/* Schedule Box */
+.sched-schedule-box {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.sched-box-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sched-box-head label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.sched-type-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: #e2e8f0;
+  border-radius: 6px;
+}
+
+.sched-type-btn {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font: 500 12px/1.2 var(--body);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 120ms ease;
+}
+
+.sched-type-btn.active {
+  background: #fff;
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.sched-days-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sched-days-label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.sched-days-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sched-day-pill {
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font: 600 12px/1 var(--body);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.sched-day-pill:hover {
+  border-color: #94a3b8;
+}
+
+.sched-day-pill.selected {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(79, 94, 232, 0.3);
+}
+
+.sched-time-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sched-tz-note {
+  font-size: 12px;
+  color: #64748b;
+  padding-bottom: 8px;
+}
+
+/* Facebook Publish Toggle */
+.sched-publish-toggle-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+}
+
+.sched-publish-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sched-publish-title-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #166534;
+}
+
+.sched-fb-icon {
+  color: #2563eb;
+}
+
+.sched-publish-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #374151;
+  line-height: 1.45;
+}
+
+.sched-fb-warning {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #b45309;
+}
+
+/* Switch Toggle */
+.sched-switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.sched-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.sched-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: #cbd5e1;
+  transition: 180ms ease;
+  border-radius: 24px;
+}
+
+.sched-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  transition: 180ms ease;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.sched-switch input:checked + .sched-slider {
+  background-color: #10b981;
+}
+
+.sched-switch input:checked + .sched-slider::before {
+  transform: translateX(20px);
+}
+
+.ui-modal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+
+@media (max-width: 900px) {
+  .schedules-stats-grid {
+    grid-template-columns: 1fr;
+  }
+  .schedules-grid {
+    grid-template-columns: 1fr;
+  }
+  .sched-form-row {
+    grid-template-columns: 1fr;
+  }
+  .sched-weekly-roles {
+    grid-template-columns: 1fr;
+  }
+}
+
