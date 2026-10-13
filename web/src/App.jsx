@@ -9,7 +9,8 @@ import ComposePage from "./pages/dashboard/ComposePage";
 import PipelinePage from "./pages/dashboard/PipelinePage";
 import JobsPage from "./pages/dashboard/JobsPage";
 import GuidePage from "./pages/dashboard/GuidePage";
-import SettingsPage from "./pages/dashboard/SettingsPage";
+// import SettingsPage from "./pages/dashboard/SettingsPage";
+import WeeklyPlanPage from "./pages/dashboard/WeeklyPlanPage";
 
 export default function App() {
   return (
@@ -27,9 +28,10 @@ export default function App() {
       >
         <Route index element={<OverviewPage />} />
         <Route path="compose" element={<ComposePage />} />
+        <Route path="weekly-plan" element={<WeeklyPlanPage />} />
         <Route path="pipeline" element={<PipelinePage />} />
         <Route path="jobs" element={<JobsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
+        {/* <Route path="settings" element={<SettingsPage />} /> */}
         <Route path="guide" element={<GuidePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

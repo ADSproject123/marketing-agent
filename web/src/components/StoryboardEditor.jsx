@@ -10,7 +10,7 @@ const REVISIONS = [
   ["change_ending", "Change the ending", "Improve the final call to action"],
 ];
 
-export default function StoryboardEditor({ job, storyboard, errors = {}, busy = "", dirty, status, statusClass, onChange, onAction, onReload, onBack }) {
+export default function StoryboardEditor({ job, storyboard, errors = {}, busy = "", dirty, onChange, onAction, onReload, onBack }) {
   const headingRef = useRef(null);
   const [previews, setPreviews] = useState({});
   const [previewError, setPreviewError] = useState(false);
@@ -178,7 +178,17 @@ export default function StoryboardEditor({ job, storyboard, errors = {}, busy = 
               })}
             </div>
             {previewError ? <p className="storyboard-field-note">Some image previews could not load. Your image selections are still saved with the script.</p> : null}
-            {storyboard.scenes.length < 8 ? <button type="button" className="ghost-btn storyboard-add" onClick={addScene}><Icon name="plus" size={14} /> Add scene</button> : null}
+            {storyboard.scenes.length < 8 ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon="plus"
+                onClick={addScene}
+                className="storyboard-add"
+              >
+                Add scene
+              </Button>
+            ) : null}
           </section>
 
           <section className="storyboard-section">
@@ -295,7 +305,6 @@ export default function StoryboardEditor({ job, storyboard, errors = {}, busy = 
             </Button>
           </div>
         </footer>
-        {status ? <p className={`compose-status ${statusClass}`} role={statusClass === "is-err" ? "alert" : "status"}>{status}</p> : null}
       </form>
     </section>
   );

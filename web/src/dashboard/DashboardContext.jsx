@@ -3,13 +3,25 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { createPromotion, fetchHealth, fetchJob, fetchJobs, fetchPromotions, createCampaignDraft as generateScript, createWeeklyPlan, saveStoryboard, reviseStoryboard, renderStoryboard } from "../api";
 import { useAuth } from "../auth";
 import { ACTIVE_STATUSES, pickDefaultJob } from "../flow";
-import { applyWeeklyPostToRequest, buildCampaignRequest, createCampaignDraft, validateCampaignStep } from "../campaign";
+import { applyWeeklyPostToRequest, buildCampaignRequest, createCampaignDraft, validateCampaignStep, withWeeklyDefaults } from "../campaign";
 import { draftFromDemo } from "../demos";
 import { fitStoryboardSpeechCadence, storyboardPayload, validateStoryboard } from "../storyboard";
+import { notify } from "../toast";
 
 const DashboardContext = createContext(null);
 const PROFILE_FIELDS = ["kind", "name", "description", "benefit", "location", "website"];
-const STEP_FIELDS = [PROFILE_FIELDS, ["goal", "audience"], ["offer", "offerTiming", "cta", "destination", "telegramUsername", "khqrFile"], ["style", "videoLength", "templateId", "language", "extraNotes", "urls", "assets"]];
+const BRIEF_FIELDS = [
+  "goal", "audience", "offer", "offerTiming", "cta", "destination", "telegramUsername", "khqrFile",
+  "style", "videoLength", "templateId", "language", "extraNotes", "urls", "assets",
+];
+const STEP_FIELDS = [PROFILE_FIELDS, BRIEF_FIELDS];
+
+function clampCampaignStep(step) {
+  const n = Number(step) || 0;
+  if (n >= 5) return 5;
+  if (n >= 1) return 1;
+  return 0;
+}
 
 function profileDraft(profile) {
   return Object.fromEntries(PROFILE_FIELDS.map((field) => [field, profile[field] || ""]));
@@ -26,8 +38,7 @@ export function DashboardProvider({ children }) {
   const [jobsError, setJobsError] = useState("");
   const [activeJobId, setActiveJobId] = useState(null);
   const [starting, setStarting] = useState(false);
-  const [startStatus, setStartStatus] = useState("");
-  const [startStatusClass, setStartStatusClass] = useState("");
+  const jobsErrorToasted = useRef("");
 
   const [campaignDraft, setCampaignDraft] = useState(createCampaignDraft);
   const [campaignStep, setCampaignStep] = useState(0);
@@ -49,8 +60,6 @@ export function DashboardProvider({ children }) {
   const [storyboard, setStoryboard] = useState(null);
   const [scriptErrors, setScriptErrors] = useState({});
   const [scriptBusy, setScriptBusy] = useState("");
-  const [scriptStatus, setScriptStatus] = useState("");
-  const [scriptStatusClass, setScriptStatusClass] = useState("");
   const [scriptDirty, setScriptDirty] = useState(false);
   const [scriptLoading, setScriptLoading] = useState(false);
   const [scriptLoadError, setScriptLoadError] = useState("");
@@ -101,13 +110,19 @@ export function DashboardProvider({ children }) {
         const list = data.jobs || [];
         setJobs(list);
         setJobsError("");
+        jobsErrorToasted.current = "";
         setActiveJobId((prev) => {
           const want = preferredId || prev;
           if (want && list.some((j) => j.id === want)) return want;
           return pickDefaultJob(list)?.id || null;
         });
       } catch (err) {
-        setJobsError(String(err.message || err));
+        const msg = String(err.message || err);
+        setJobsError(msg);
+        if (jobsErrorToasted.current !== msg) {
+          jobsErrorToasted.current = msg;
+          notify.error(msg);
+        }
         if (err.status === 401) logout();
       }
     },
@@ -121,7 +136,9 @@ export function DashboardProvider({ children }) {
       setPromotions(data.promotions || []);
       setProfileError("");
     } catch (err) {
-      setProfileError(String(err.message || err));
+      const msg = String(err.message || err);
+      setProfileError(msg);
+      notify.error(msg);
       if (err.status === 401) logout();
     } finally {
       setProfilesLoading(false);
@@ -137,18 +154,19 @@ export function DashboardProvider({ children }) {
       const job = data.job || data;
       if (request !== scriptLoadRequest.current) return;
       if (!job?.storyboard || !["script_review", "failed"].includes(job.status)) {
-        throw new Error("This campaign is not an editable script draft. Open its campaign details to view the current progress.");
+        throw new Error("This campaign is not an editable script draft. Open Campaign history for progress.");
       }
       setScriptJob(job);
       setStoryboard(job.storyboard);
       setScriptDirty(false);
       setScriptErrors({});
-      setScriptStatus("");
       setCampaignStep(5);
       setActiveJobId(job.id);
     } catch (err) {
       if (request !== scriptLoadRequest.current) return;
-      setScriptLoadError(String(err.message || err));
+      const msg = String(err.message || err);
+      setScriptLoadError(msg);
+      notify.error(msg);
       if (err.status === 401) logout();
     } finally {
       if (request === scriptLoadRequest.current) setScriptLoading(false);
@@ -230,8 +248,9 @@ export function DashboardProvider({ children }) {
         const parsed = JSON.parse(raw);
         if (parsed.draft) {
           setCampaignDraft(createCampaignDraft({ ...parsed.draft }));
-          setCampaignStep(parsed.step ?? 0);
-          if ((parsed.step ?? 0) === 0) setBusinessView("form");
+          const step = clampCampaignStep(parsed.step ?? 0);
+          setCampaignStep(step);
+          if (step === 0) setBusinessView("form");
         }
       }
     } catch {}
@@ -262,7 +281,6 @@ export function DashboardProvider({ children }) {
       return next;
     });
     setProfileError("");
-    setStartStatus("");
   }, []);
 
   const onPromotionSelect = useCallback((id) => {
@@ -280,7 +298,6 @@ export function DashboardProvider({ children }) {
     }));
     setCampaignErrors({});
     setProfileError("");
-    setStartStatus("");
   }, [promotions]);
 
   const onDemoSelect = useCallback((id) => {
@@ -288,50 +305,49 @@ export function DashboardProvider({ children }) {
     const draft = draftFromDemo(id);
     if (!draft) return;
     setCampaignDraft(draft);
-    setCampaignStep(4);
+    setCampaignStep(1);
+    setBusinessView("form");
     setCampaignErrors({});
     setProfileError("");
-    setStartStatus("Demo loaded — review and generate to test the full flow.");
-    setStartStatusClass("");
+    notify.info("Demo loaded — write a script to continue.");
   }, []);
 
   const onCampaignEditStep = useCallback((step) => {
-    if (submitting.current || step < 0 || step > 4) return;
-    if (step === 0) setBusinessView("form");
-    setCampaignStep(step);
+    if (submitting.current || step < 0 || step > 5) return;
+    const next = step >= 5 ? 5 : clampCampaignStep(step);
+    if (next <= 1) setBusinessView("form");
+    setCampaignStep(next);
     setCampaignErrors({});
-    setStartStatus("");
   }, []);
 
   const onCampaignBack = useCallback(() => {
     if (submitting.current) return;
     setCampaignStep((previous) => {
-      if (previous === 6) {
-        setStartStatus("");
-        return 4;
+      if (previous === 1) {
+        setBusinessView(campaignDraft.promotionId ? "detail" : "list");
       }
-      if (previous === 1) setBusinessView("form");
+      if (previous >= 5) return 1;
       return Math.max(0, previous - 1);
     });
     setCampaignErrors({});
-    setStartStatus("");
-  }, []);
+  }, [campaignDraft.promotionId]);
 
   const onPlanWeek = useCallback(async () => {
-    if (submitting.current || campaignStep !== 4) return;
-    const errors = validateCampaignStep(campaignDraft, 4);
+    if (submitting.current) return;
+    const draft = withWeeklyDefaults(campaignDraft);
+    const errors = validateCampaignStep(draft, 4);
     setCampaignErrors(errors);
     if (Object.keys(errors).length) {
       const step = STEP_FIELDS.findIndex((fields) => fields.includes(Object.keys(errors)[0]));
       if (step >= 0) setCampaignStep(step);
+      notify.warning(Object.values(errors)[0] || "Check your week settings.");
       return;
     }
     submitting.current = true;
     setStarting(true);
-    setStartStatusClass("");
-    setStartStatus("Planning your week…");
     try {
-      const request = buildCampaignRequest(campaignDraft);
+      setCampaignDraft(draft);
+      const request = buildCampaignRequest(draft);
       const data = await createWeeklyPlan({
         brief: request.brief,
         notes: request.notes,
@@ -342,19 +358,23 @@ export function DashboardProvider({ children }) {
       if (posts.length !== 3) throw new Error("The weekly plan could not be loaded. Please try again.");
       setWeeklyPlan(posts);
       setWeeklySelectedDays(posts.map((post) => post.day));
-      setCampaignStep(6);
-      setStartStatus("");
-      setStartStatusClass("");
+      notify.success("Week plan ready.");
+      navigate("/dashboard/weekly-plan");
     } catch (err) {
       if (err.errors) setCampaignErrors(err.errors);
-      setStartStatusClass("is-err");
-      setStartStatus(String(err.message || err));
+      notify.error(String(err.message || err));
       if (err.status === 401) logout();
     } finally {
       submitting.current = false;
       setStarting(false);
     }
-  }, [campaignDraft, campaignStep, logout]);
+  }, [campaignDraft, logout, navigate]);
+
+  const onClearWeeklyPlan = useCallback(() => {
+    if (submitting.current) return;
+    setWeeklyPlan(null);
+    setWeeklySelectedDays([]);
+  }, []);
 
   const onWeeklyToggleDay = useCallback((day) => {
     if (submitting.current) return;
@@ -374,12 +394,10 @@ export function DashboardProvider({ children }) {
     if (!selected.length) return;
     submitting.current = true;
     setStarting(true);
-    setStartStatusClass("");
     try {
-      const baseRequest = buildCampaignRequest(campaignDraft);
+      const baseRequest = buildCampaignRequest(withWeeklyDefaults(campaignDraft));
       const created = [];
       for (let index = 0; index < selected.length; index += 1) {
-        setStartStatus(`Creating draft ${index + 1} of ${selected.length}…`);
         const payload = applyWeeklyPostToRequest(baseRequest, selected[index]);
         const data = await generateScript(payload);
         if (!data.job?.storyboard || !data.job.id) {
@@ -394,17 +412,18 @@ export function DashboardProvider({ children }) {
       setStoryboard(first.storyboard);
       setScriptDirty(false);
       setScriptErrors({});
-      setScriptStatus("");
       setScriptLoadError("");
       setActiveJobId(first.id);
       setCampaignStep(5);
-      setStartStatus("");
-      setStartStatusClass("is-ok");
+      notify.success(
+        created.length > 1
+          ? `${created.length} scripts created. Opening the first one.`
+          : "Script ready."
+      );
       navigate(`/dashboard/compose?draft=${encodeURIComponent(first.id)}`);
     } catch (err) {
       if (err.errors) setCampaignErrors(err.errors);
-      setStartStatusClass("is-err");
-      setStartStatus(String(err.message || err));
+      notify.error(String(err.message || err));
       if (err.status === 401) logout();
     } finally {
       submitting.current = false;
@@ -416,19 +435,18 @@ export function DashboardProvider({ children }) {
     async (ev) => {
       ev.preventDefault();
       if (submitting.current) return;
-      const errors = validateCampaignStep(campaignDraft, campaignStep);
+      const validateAs = campaignStep === 1 ? "brief" : campaignStep;
+      const errors = validateCampaignStep(campaignDraft, validateAs);
       setCampaignErrors(errors);
       if (Object.keys(errors).length) {
-        if (campaignStep === 4) {
+        if (campaignStep === 1) {
           const step = STEP_FIELDS.findIndex((fields) => fields.includes(Object.keys(errors)[0]));
-          if (step >= 0) setCampaignStep(step);
+          if (step === 0) setCampaignStep(0);
         }
         return;
       }
-      setStartStatus("");
-
-      if (campaignStep < 4) {
-        if (campaignStep === 0 && !campaignDraft.promotionId) {
+      if (campaignStep === 0) {
+        if (!campaignDraft.promotionId) {
           submitting.current = true;
           setSavingPromotion(true);
           setProfileError("");
@@ -439,50 +457,50 @@ export function DashboardProvider({ children }) {
             setPromotions((previous) => [profile, ...previous.filter((item) => item.id !== profile.id)]);
             setCampaignDraft((previous) => ({ ...previous, ...profileDraft(profile), promotionId: profile.id }));
             setCampaignStep(1);
+            notify.success("Business saved.");
           } catch (err) {
-            setProfileError(String(err.message || err));
+            const msg = String(err.message || err);
+            setProfileError(msg);
+            notify.error(msg);
             if (err.status === 401) logout();
           } finally {
             submitting.current = false;
             setSavingPromotion(false);
           }
         } else {
-          setCampaignStep(campaignStep + 1);
+          setCampaignStep(1);
         }
         return;
       }
 
+      if (campaignStep !== 1) return;
+
       submitting.current = true;
       setStarting(true);
-      setStartStatusClass("");
-      setStartStatus("Writing your script…");
       try {
         const data = await generateScript(buildCampaignRequest(campaignDraft));
         if (!data.job?.storyboard || !data.job.id) throw new Error("The script could not be loaded. Please try again.");
-        setStartStatusClass("is-ok");
-        setStartStatus("");
         setScriptJob(data.job);
         setScriptSetupId(data.job.id);
         setStoryboard(data.job.storyboard);
         setScriptDirty(false);
         setScriptErrors({});
-        setScriptStatus("");
         setScriptLoadError("");
         setCampaignStep(5);
         setActiveJobId(data.job.id);
         setJobs((previous) => [data.job, ...previous.filter((job) => job.id !== data.job.id)]);
+        notify.success("Script ready.");
         navigate(`/dashboard/compose?draft=${encodeURIComponent(data.job.id)}`);
       } catch (err) {
         if (err.errors) setCampaignErrors(err.errors);
-        setStartStatusClass("is-err");
-        setStartStatus(String(err.message || err));
+        notify.error(String(err.message || err));
         if (err.status === 401) logout();
       } finally {
         submitting.current = false;
         setStarting(false);
       }
     },
-    [campaignDraft, campaignStep, loadJobs, navigate, logout]
+    [campaignDraft, campaignStep, navigate, logout]
   );
 
   const onStoryboardChange = useCallback((next) => {
@@ -490,7 +508,6 @@ export function DashboardProvider({ children }) {
     setStoryboard(next);
     setScriptDirty(true);
     setScriptErrors({});
-    setScriptStatus("");
   }, []);
 
   const onStoryboardAction = useCallback(async (action) => {
@@ -500,11 +517,12 @@ export function DashboardProvider({ children }) {
     if (fitted !== storyboard) setStoryboard(fitted);
     const errors = validateStoryboard(fitted);
     setScriptErrors(errors);
-    if (Object.keys(errors).length) return;
+    if (Object.keys(errors).length) {
+      notify.warning(Object.values(errors)[0] || "Check your script before continuing.");
+      return;
+    }
     submitting.current = true;
     setScriptBusy(action);
-    setScriptStatusClass("");
-    setScriptStatus(action === "render" ? "Starting your video…" : action === "save" ? "Saving your script…" : "Revising your script…");
     try {
       const payload = storyboardPayload(fitted);
       const data = action === "render"
@@ -516,8 +534,6 @@ export function DashboardProvider({ children }) {
       setScriptJob(data.job);
       setStoryboard(data.job.storyboard || payload);
       setScriptDirty(false);
-      setScriptStatusClass("is-ok");
-      setScriptStatus(data.message || (action === "save" ? "Script saved." : "Script updated."));
       setJobs((previous) => [data.job, ...previous.filter((job) => job.id !== data.job.id)]);
       if (action === "render") {
         setActiveJobId(data.job.id);
@@ -526,11 +542,13 @@ export function DashboardProvider({ children }) {
         setBusinessView("list");
         setScriptJob(null);
         setStoryboard(null);
+        notify.success("Video generating — watch Live pipeline.");
         navigate("/dashboard/pipeline");
+      } else {
+        notify.success(data.message || (action === "save" ? "Script saved." : "Script updated."));
       }
     } catch (err) {
-      setScriptStatusClass("is-err");
-      setScriptStatus(String(err.message || err));
+      notify.error(String(err.message || err));
       if (err.status === 401) logout();
     } finally {
       submitting.current = false;
@@ -564,13 +582,12 @@ export function DashboardProvider({ children }) {
       savingPromotion,
       profileError,
       starting,
-      startStatus,
-      startStatusClass,
       onCampaignDraftChange,
       onPromotionSelect,
       onDemoSelect,
       onCampaignSubmit,
       onPlanWeek,
+      onClearWeeklyPlan,
       onCampaignBack,
       onCampaignEditStep,
       weeklyPlan,
@@ -581,7 +598,7 @@ export function DashboardProvider({ children }) {
       hasSavedDraft,
       onRestoreDraft,
       onDiscardDraft,
-      scriptJob, storyboard, scriptErrors, scriptBusy, scriptStatus, scriptStatusClass,
+      scriptJob, storyboard, scriptErrors, scriptBusy,
       scriptDirty, scriptLoading, scriptLoadError, onStoryboardChange, onStoryboardAction, onReloadScript,
       scriptCanEditSetup: scriptSetupId === scriptJob?.id,
     }),
@@ -604,13 +621,12 @@ export function DashboardProvider({ children }) {
       savingPromotion,
       profileError,
       starting,
-      startStatus,
-      startStatusClass,
       onCampaignDraftChange,
       onPromotionSelect,
       onDemoSelect,
       onCampaignSubmit,
       onPlanWeek,
+      onClearWeeklyPlan,
       onCampaignBack,
       onCampaignEditStep,
       weeklyPlan,
@@ -621,7 +637,7 @@ export function DashboardProvider({ children }) {
       hasSavedDraft,
       onRestoreDraft,
       onDiscardDraft,
-      scriptJob, storyboard, scriptErrors, scriptBusy, scriptStatus, scriptStatusClass,
+      scriptJob, storyboard, scriptErrors, scriptBusy,
       scriptDirty, scriptLoading, scriptLoadError, onStoryboardChange, onStoryboardAction, onReloadScript,
       scriptSetupId,
     ]

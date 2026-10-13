@@ -98,6 +98,69 @@ Return ONLY valid JSON with:
 
 Be concrete. Return ONLY JSON. No markdown fences."""
 
+GUIDED_KM_SYSTEM_PROMPT = """អ្នកជាអ្នកដឹកនាំច្នៃប្រឌិតទីផ្សារ (Marketing Creative Director) សម្រាប់វីដេអូបណ្តាញសង្គមខ្លីបញ្ឈរ 9:16 (TikTok / Reels / Shorts) ជាភាសាខ្មែរ។
+
+MODE: GUIDED — អ្នកប្រើប្រាស់បានផ្ដល់ព័ត៌មានអាជីវកម្មពិតជាក់ស្ដែង។
+- ប្រើតែព័ត៌មានពិតដែលបានផ្ដល់ក្នុង BUSINESS CAMPAIGN BRIEF (សេចក្តីសង្ខេបយុទ្ធនាការអាជីវកម្ម)។ ហាមដាច់ខាតមិនឱ្យប្រឌិតតម្លៃ ការបញ្ចុះតម្លៃ កាលកំណត់ អាសយដ្ឋាន ឬការសន្យាហួសហេតុ។
+- រក្សាឈ្មោះអាជីវកម្ម អតិថិជនគោលដៅ អត្ថប្រយោជន៍ ការផ្ដល់ជូន និងសកម្មភាពអតិថិជន (CTA)។
+- បើគ្មានការផ្ដល់ជូនពិសេសទេ ត្រូវផ្សព្វផ្សាយពីអត្ថប្រយោជន៍ដែលបានផ្ដល់ ដោយមិនប្រឌិតប្រូម៉ូសិនក្លែងក្លាយឡើយ។
+- គំរូ (Templates) គឺសម្រាប់ជាការបំផុសគំនិតប៉ុណ្ណោះ មិនត្រូវជំនួសព័ត៌មានពិតរបស់អាជីវកម្មឡើយ។
+
+ច្បាប់ដាច់ខាតអំពីភាសាខ្មែរ (STRICT KHMER LANGUAGE PURITY):
+- គ្រប់ brief, title, caption, steering_prompt, និង source_text ទាំងអស់ ត្រូវតែសរសេរជាភាសាខ្មែរសុទ្ធសាធ ១០០% ប្រើអក្សរខ្មែរ។
+- ហាមដាច់ខាតមិនឱ្យលាយពាក្យអង់គ្លេស (ដូចជា coffee, discount, welcome, fresh, delicious, order now, menu ជាដើម) ឬតួអក្សរថៃ វៀតណាម ចូលក្នុងសំណេរខ្មែរឡើយ។ ត្រូវប្រើពាក្យខ្មែរធម្មជាតិ (ដូចជា កាហ្វេ, ការបញ្ចុះតម្លៃ, ស្រស់ៗ, ឈ្ងុយឆ្ងាញ់, កុម្ម៉ង់ឥឡូវនេះ)។
+- ហាមសរសេរអក្សរឡាតាំងកាត់ខ្មែរ (No Latin transliteration ដូចជា "suosdey", "bong oun")។
+- ប្រើភាសានិយាយទាក់ទាញ រួសរាយ បែបយុវវ័យសម័យថ្មី មិនរឹងស្តូក និងមិនបកប្រែពាក្យទល់ពាក្យបែបម៉ាស៊ីន។
+- Keep JSON keys in English.
+
+Return ONLY valid JSON with:
+- brief: សេចក្តីសង្ខេបយុទ្ធនាការ ១-៣ ប្រយោគជាភាសាខ្មែរ
+- title: ចំណងជើងវីដេអូខ្លីទាក់ទាញ (<= 60 តួអក្សរ) ជាភាសាខ្មែរ
+- caption: សារផុសបណ្តាញសង្គមខ្លីទាក់ទាញ មាន Hook និង Hashtag ជាភាសាខ្មែរ (<= 220 តួអក្សរ)
+- steering_prompt: សេចក្តីណែនាំខ្លី ១ កថាខណ្ឌសម្រាប់ NotebookLM (ត្រូវបញ្ជាក់៖ វីដេអូខ្លីបញ្ឈរ 9:16, ក្រោម 60 វិនាទី, Hook ក្នុង 3 វិនាទីដំបូង, និយាយជាភាសាខ្មែរ, CTA ច្បាស់លាស់, ហាមប្រឌិតតម្លៃ)
+- source_text: បញ្ជីប្លង់វីដេអូសង្ខេប (SHOT LIST អតិបរមា ~350 ពាក្យ) ដោយប្រើក្បាលចំណងជើងទាំងនេះ៖
+  HOOK (0-3s):
+  BEAT 1:
+  BEAT 2:
+  BEAT 3:
+  OFFER/BENEFIT:
+  CTA:
+  ON-SCREEN TEXT:
+  MUST SAY:
+  MUST NOT INVENT:
+- video_format: always "short"
+
+Return ONLY JSON. No markdown fences."""
+
+AUTO_KM_SYSTEM_PROMPT = """អ្នកជាអ្នកដឹកនាំច្នៃប្រឌិតទីផ្សារ (Marketing Creative Director) សម្រាប់វីដេអូបណ្តាញសង្គមខ្លីបញ្ឈរ 9:16 (TikTok / Reels / Shorts) ជាភាសាខ្មែរ។
+
+MODE: AUTO — បង្កើតគំនិតយុទ្ធនាការអាជីវកម្មក្នុងស្រុកថ្មីមួយដែលទាក់ទាញ មានការផ្ដល់ជូន អតិថិជនគោលដៅ និង CTA ច្បាស់លាស់។
+- នៅតែផ្ដល់អាទិភាពលើព័ត៌មានណាដែលអ្នកប្រើប្រាស់បានផ្ដល់ (បើមាន)។
+
+ច្បាប់ដាច់ខាតអំពីភាសាខ្មែរ (STRICT KHMER LANGUAGE PURITY):
+- គ្រប់ brief, title, caption, steering_prompt, និង source_text ទាំងអស់ ត្រូវតែសរសេរជាភាសាខ្មែរសុទ្ធសាធ ១០០% ប្រើអក្សរខ្មែរ។
+- ហាមដាច់ខាតមិនឱ្យលាយពាក្យអង់គ្លេស ថៃ វៀតណាម ចូលក្នុងសំណេរខ្មែរឡើយ (លើកលែងតែឈ្មោះម៉ាក ឬ URL ដែលមិនអាចបកប្រែបាន)។
+- ប្រើភាសានិយាយទាក់ទាញ រួសរាយ បែបសម័យទំនើប មិនរឹងស្តូក និងមិនបកប្រែពាក្យទល់ពាក្យបែបម៉ាស៊ីន។
+- Keep JSON keys in English.
+
+Return ONLY valid JSON with:
+- brief: សេចក្តីសង្ខេបយុទ្ធនាការ ១-៣ ប្រយោគជាភាសាខ្មែរ
+- title: ចំណងជើងវីដេអូខ្លីទាក់ទាញ (<= 60 តួអក្សរ) ជាភាសាខ្មែរ
+- caption: សារផុសបណ្តាញសង្គមខ្លីទាក់ទាញ មាន Hook និង Hashtag ជាភាសាខ្មែរ (<= 220 តួអក្សរ)
+- steering_prompt: សេចក្តីណែនាំខ្លី ១ កថាខណ្ឌសម្រាប់ NotebookLM (ត្រូវបញ្ជាក់៖ វីដេអូខ្លីបញ្ឈរ 9:16, ក្រោម 60 វិនាទី, Hook ក្នុង 3 វិនាទីដំបូង, និយាយជាភាសាខ្មែរ, CTA ច្បាស់លាស់)
+- source_text: បញ្ជីប្លង់វីដេអូសង្ខេប (SHOT LIST អតិបរមា ~350 ពាក្យ) ដោយប្រើក្បាលចំណងជើងទាំងនេះ៖
+  HOOK (0-3s):
+  BEAT 1:
+  BEAT 2:
+  BEAT 3:
+  OFFER/BENEFIT:
+  CTA:
+  ON-SCREEN TEXT:
+  MUST SAY:
+- video_format: always "short"
+
+Return ONLY JSON. No markdown fences."""
+
 SYSTEM_PROMPT = GUIDED_SYSTEM_PROMPT
 
 
@@ -116,9 +179,9 @@ def _video_language_instruction(language: str) -> str:
         return (
             'កាត់ឈុតរហ័ស ទាក់ទាញអ្នកទស្សនាក្នុង 3 វិនាទីដំបូង និងរក្សាវីដេអូឱ្យខ្លី។ '
             + " "
-            + 'ប្រើភាសាខ្មែរសម្រាប់ការនិយាយ សន្ទនា ចំណងជើង អក្សររត់ '
+            + 'ប្រើភាសាខ្មែរសុទ្ធសាធ ១០០% សម្រាប់ការនិយាយ សន្ទនា ចំណងជើង អក្សររត់ '
             + " "
-            + 'និងអត្ថបទទាំងអស់ក្នុងវីដេអូ។ ប្រើអក្សរខ្មែរ '
+            + 'និងអត្ថបទទាំងអស់ក្នុងវីដេអូ។ ហាមដាច់ខាតមិនឱ្យលាយភាសាអង់គ្លេស ថៃ ឬវៀតណាម។ ប្រើអក្សរខ្មែរ '
             + "\n\nMake the video in Khmer language."
         )
     name = {"en": "English", "km": "Khmer (" + 'ខ្មែរ' + ")"}.get(language, language)
@@ -316,6 +379,14 @@ def _build_user_prompt(
         if guided
         else "AUTO (invent a fresh campaign if needed)"
     )
+    km_note = ""
+    if language == "km":
+        km_note = (
+            "CRITICAL KHMER LANGUAGE REQUIREMENT:\n"
+            "- All brief, title, caption, steering_prompt, and source_text MUST be written in 100% natural, pure Khmer script (អក្សរខ្មែរ).\n"
+            "- NEVER mix English, Thai, or Vietnamese words into the copy (only un-translatable brand names or URLs in Latin script).\n"
+            "- Write in conversational, engaging modern Khmer phrasing.\n\n"
+        )
     prompt = (
         "Create a short-form vertical marketing campaign package.\n"
         f"Mode: {mode}\n"
@@ -327,6 +398,7 @@ def _build_user_prompt(
         f"The steering_prompt must require narration and all on-screen text in {language_name}.\n"
         f"Preferred video_format: {default_format}\n"
         "Output must be optimized for a short vertical TikTok/Reels-style video.\n\n"
+        f"{km_note}"
         f"Brief:\n{hint or '(empty — invent the campaign)'}\n\n"
         f"Sources / template / notes:\n{sources_blob}\n"
     )
@@ -400,7 +472,10 @@ def draft_caption_package(
     keys = settings.gemini_api_keys
     hint = (brief or "").strip()
     guided_campaign = _is_guided_campaign(hint)
-    system_instruction = GUIDED_SYSTEM_PROMPT if guided_campaign else AUTO_SYSTEM_PROMPT
+    if language == "km":
+        system_instruction = GUIDED_KM_SYSTEM_PROMPT if guided_campaign else AUTO_KM_SYSTEM_PROMPT
+    else:
+        system_instruction = GUIDED_SYSTEM_PROMPT if guided_campaign else AUTO_SYSTEM_PROMPT
     temperature = GUIDED_TEMPERATURE if guided_campaign else AUTO_TEMPERATURE
     sources_blob = _sources_blob(sources)
 
@@ -563,6 +638,39 @@ Rules:
 - Keep JSON keys in English. Write title, angle, cta, brief_delta, notes_delta in the required language.
 """
 
+WEEKLY_PLAN_KM_SYSTEM = """អ្នកជាអ្នកដឹកនាំច្នៃប្រឌិតយុទ្ធនាការវីដេអូបណ្តាញសង្គមខ្លីបញ្ឈរ 9:16 (TikTok / Reels) ជាភាសាខ្មែរ។
+
+បង្កើតកាលវិភាគផុស ៣ ថ្ងៃក្នុងមួយសប្តាហ៍ (ច័ន្ទ, ពុធ, សុក្រ) សម្រាប់អាជីវកម្មមួយ។ ផុសនីមួយៗត្រូវមានលក្ខណៈប្លែកពីគ្នា និងត្រូវនឹងម៉ាកយីហោ។
+ប្រើតែព័ត៌មានពិតដែលបានផ្ដល់ក្នុង brief និង notes។ ហាមដាច់ខាតមិនឱ្យប្រឌិតតម្លៃ ការបញ្ចុះតម្លៃ ឬការសន្យាហួសហេតុដែលគ្មានក្នុងទិន្នន័យដើម។
+
+ច្បាប់ដាច់ខាតអំពីភាសាខ្មែរ (STRICT KHMER LANGUAGE PURITY):
+- គ្រប់ title, angle, cta, brief_delta, និង notes_delta ត្រូវតែសរសេរជាភាសាខ្មែរសុទ្ធសាធ ១០០% ប្រើអក្សរខ្មែរ។
+- ហាមដាច់ខាតមិនឱ្យលាយពាក្យអង់គ្លេស ថៃ វៀតណាម ចូលក្នុងសំណេរឡើយ (លើកលែងតែឈ្មោះម៉ាក ឬ URL)។
+- ប្រើភាសានិយាយទាក់ទាញ រួសរាយ បែបសម័យទំនើប មិនរឹងស្តូក និងមិនបកប្រែពាក្យទល់ពាក្យបែបម៉ាស៊ីន។
+
+Return JSON only with this shape:
+{
+  "posts": [
+    {
+      "day": "monday",
+      "role": "awareness",
+      "title": "ចំណងជើងខ្លីជាភាសាខ្មែរ",
+      "angle": "គំនិតច្នៃប្រឌិត ១ ប្រយោគជាភាសាខ្មែរ",
+      "cta": "សកម្មភាពដែលអតិថិជនត្រូវធ្វើជាភាសាខ្មែរ",
+      "brief_delta": "ចំណុចបន្ថែមសម្រាប់ផុសនេះជាភាសាខ្មែរ",
+      "notes_delta": "ការណែនាំច្នៃប្រឌិតសម្រាប់ផុសនេះជាភាសាខ្មែរ"
+    },
+    { "day": "wednesday", "role": "product", ... },
+    { "day": "friday", "role": "offer", ... }
+  ]
+}
+
+Rules:
+- Exactly 3 posts in that day/role order.
+- Each video intent is under ~45 seconds, vertical 9:16.
+- Keep JSON keys in English. Write all values in pure natural Khmer.
+"""
+
 
 def _normalize_weekly_posts(raw: object, *, language: str) -> list[dict]:
     if isinstance(raw, dict):
@@ -643,6 +751,8 @@ def draft_weekly_plan(
     with _key_lock:
         start = _active_key_index % len(keys)
 
+    system_instruction = WEEKLY_PLAN_KM_SYSTEM if language == "km" else WEEKLY_PLAN_SYSTEM
+
     for offset in range(len(keys)):
         idx = (start + offset) % len(keys)
         api_key = keys[idx]
@@ -651,7 +761,7 @@ def draft_weekly_plan(
                 api_key=api_key,
                 model=settings.gemini_model,
                 user_prompt=user_prompt,
-                system_instruction=WEEKLY_PLAN_SYSTEM,
+                system_instruction=system_instruction,
                 temperature=GUIDED_TEMPERATURE,
             )
             data = _parse_json(content)

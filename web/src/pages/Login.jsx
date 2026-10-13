@@ -4,7 +4,8 @@ import { useAuth } from "../auth";
 import MarketingHeader from "../components/MarketingHeader";
 import SiteFooter from "../components/SiteFooter";
 import Icon from "../components/Icon";
-import { Alert, Button, FormField, Input } from "../components/ui";
+import { Button, FormField, Input } from "../components/ui";
+import { notify } from "../toast";
 
 export default function Login() {
   const { login, isAuthenticated, loading } = useAuth();
@@ -14,7 +15,6 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && isAuthenticated) {
@@ -24,13 +24,12 @@ export default function Login() {
   async function onSubmit(ev) {
     ev.preventDefault();
     if (submitting) return;
-    setError("");
     setSubmitting(true);
     try {
       await login({ email: email.trim(), password });
       navigate(from, { replace: true });
     } catch (err) {
-      setError(String(err.message || err));
+      notify.error(String(err.message || err));
     } finally {
       setSubmitting(false);
     }
@@ -125,12 +124,6 @@ export default function Login() {
                   placeholder="Enter your password"
                 />
               </FormField>
-
-              {error ? (
-                <Alert tone="danger" role="alert">
-                  {error}
-                </Alert>
-              ) : null}
 
               <Button
                 type="submit"

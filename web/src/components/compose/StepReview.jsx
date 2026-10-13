@@ -1,4 +1,3 @@
-import Icon from "../Icon";
 import { ReviewDetail, ReviewSection } from "./FormBits";
 import { CTA_LABELS, GOALS, KINDS, STYLES, VIDEO_LENGTHS } from "./constants";
 
@@ -19,7 +18,6 @@ export default function StepReview({ draft, template, assets, onEditStep }) {
       <ReviewSection title="Video direction" editLabel="Edit video direction" onEdit={() => onEditStep(3)}>
         <ReviewDetail label="Personality" value={STYLES.find((item) => item.value === draft.style)?.label} /><ReviewDetail label="Video length" value={lengthLabel} /><ReviewDetail label="Language" value={draft.language === "km" ? "Khmer · ខ្មែរ" : "English"} /><ReviewDetail label="Creative angle" value={template?.label || "Chosen for your campaign"} /><ReviewDetail label="Extra direction" value={draft.extraNotes} /><ReviewDetail label="Source links" value={draft.urls} /><ReviewDetail label="Brand images" value={assets.length ? assets.map((file) => file.name).join(", ") : ""} />
       </ReviewSection>
-      <div className="campaign-tip"><Icon name="shield" size={18} /><p>Write one script, or plan three posts for the week. Finished videos arrive in Telegram for approval before anything publishes.</p></div>
     </div>
   );
 }

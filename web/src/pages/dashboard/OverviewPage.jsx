@@ -1,47 +1,50 @@
 import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
-import { Alert, Button, EmptyState, Panel, StatCard, StatusBadge } from "../../components/ui";
+import { Button, EmptyState, Panel, StatCard, StatusBadge } from "../../components/ui";
 import { useDashboard } from "../../dashboard/DashboardContext";
 import { ACTIVE_STATUSES, formatTime, stageForJob, STEPS } from "../../flow";
 
-const SHORTCUTS = [
-  { to: "/dashboard/compose", icon: "sparkles", title: "Create a campaign", note: "Turn your next idea into a video" },
-  { to: "/dashboard/pipeline", icon: "activity", title: "Watch your pipeline", note: "Follow each step as it happens" },
-  { to: "/dashboard/guide", icon: "book", title: "Explore the guide", note: "Get to know your campaign workflow" },
-];
-
 export default function OverviewPage() {
-  const { jobs, jobsError, liveCount, activeJob, setActiveJobId, loadJobs } = useDashboard();
+  const { jobs, jobsError, activeJob, setActiveJobId } = useDashboard();
   const recent = jobs.slice(0, 5);
   const awaitingReview = jobs.filter((job) => job.status === "awaiting_approval").length;
   const completed = jobs.filter((job) => job.status === "posted").length;
+  const generating = jobs.filter((job) => ACTIVE_STATUSES.has(job.status)).length;
   const activeStage = activeJob ? STEPS[stageForJob(activeJob)]?.title : null;
 
   const stats = [
-    { label: "Recent campaigns", value: jobs.length, note: "Up to 20 most recent jobs", icon: "layers", tone: "blue" },
-    { label: "In progress", value: liveCount, note: liveCount ? "Your agent is on it" : "Ready for your next campaign", icon: "activity", tone: "violet" },
-    { label: "Awaiting review", value: awaitingReview, note: "Approve previews in Telegram", icon: "send", tone: "amber" },
-    { label: "Completed", value: completed, note: "Finished jobs in recent history", icon: "circle-check", tone: "green" },
+    { label: "Videos", value: jobs.length, icon: "layers", tone: "blue" },
+    { label: "Generating", value: generating, icon: "activity", tone: "violet" },
+    { label: "Review", value: awaitingReview, icon: "send", tone: "amber" },
+    { label: "Published", value: completed, icon: "circle-check", tone: "green" },
   ];
 
   return (
     <div className="dash-page overview-page">
       <h1 className="visually-hidden">Overview</h1>
 
-      {jobsError ? (
-        <Alert
-          tone="warning"
-          title="Couldn't refresh your campaigns"
-          action={
-            <Button variant="ghost" size="xs" icon="refresh" onClick={() => loadJobs()}>
-              Try again
-            </Button>
-          }
-          className="overview-alert-banner"
-        >
-          {jobsError}
-        </Alert>
-      ) : null}
+      <Panel className="overview-hub" title="Start">
+        <div className="overview-hub-grid">
+          <Link className="overview-hub-card" to="/dashboard/compose">
+            <span className="overview-hub-icon" aria-hidden="true">
+              <Icon name="sparkles" size={22} />
+            </span>
+            <span className="overview-hub-copy">
+              <strong>Make a video</strong>
+            </span>
+            <Icon name="arrow-right" size={18} />
+          </Link>
+          <Link className="overview-hub-card" to="/dashboard/weekly-plan">
+            <span className="overview-hub-icon" aria-hidden="true">
+              <Icon name="clock" size={22} />
+            </span>
+            <span className="overview-hub-copy">
+              <strong>Plan my week</strong>
+            </span>
+            <Icon name="arrow-right" size={18} />
+          </Link>
+        </div>
+      </Panel>
 
       <div className="overview-stats">
         {stats.map((stat) => (
@@ -49,7 +52,6 @@ export default function OverviewPage() {
             key={stat.label}
             label={stat.label}
             value={jobsError && !jobs.length ? "—" : stat.value}
-            note={stat.note}
             icon={stat.icon}
             tone={stat.tone}
           />
@@ -57,35 +59,26 @@ export default function OverviewPage() {
       </div>
 
       <div className="overview-grid">
-        <Panel
-          kicker="Keep things moving"
-          title="Campaign spotlight"
-          action={
-            <Link className="overview-text-link" to="/dashboard/pipeline">
-              View pipeline <Icon name="arrow-up-right" size={16} />
-            </Link>
-          }
-          className="overview-spotlight"
-        >
+        <Panel title="Active" className="overview-spotlight">
           {activeJob ? (
             <div className="overview-active">
               <div className="overview-active-top">
                 <StatusBadge status={activeJob.status} />
                 <span className="job-id">#{activeJob.id.slice(0, 8)}</span>
               </div>
-              <h3 className="job-brief">{activeJob.title || activeJob.brief || "Untitled campaign"}</h3>
+              <h3 className="job-brief">{activeJob.title || activeJob.brief || "Untitled"}</h3>
               <p className="job-meta">
-                <Icon name="clock" size={14} /> Updated {formatTime(activeJob.updated_at || activeJob.created_at)}
+                <Icon name="clock" size={14} /> {formatTime(activeJob.updated_at || activeJob.created_at)}
               </p>
               <div className="overview-active-stage">
                 <span>
                   <Icon name="activity" size={17} />
                   {ACTIVE_STATUSES.has(activeJob.status)
-                    ? `Current step: ${activeStage || "In progress"}`
-                    : `Last step: ${activeStage || "Complete"}`}
+                    ? `Generating · ${activeStage || "In progress"}`
+                    : activeStage || "Ready"}
                 </span>
                 <Link to="/dashboard/pipeline">
-                  View details <Icon name="arrow-right" size={15} />
+                  Open <Icon name="arrow-right" size={15} />
                 </Link>
               </div>
             </div>
@@ -95,42 +88,51 @@ export default function OverviewPage() {
                 <Icon name="activity" size={24} />
               </span>
               <div>
-                <h3>A clear view of every step</h3>
-                <p>Your campaign's progress will appear here once you get started.</p>
+                <h3>Nothing generating</h3>
+                <p>Progress appears here when a video is running.</p>
               </div>
             </div>
           )}
         </Panel>
 
-        <Panel
-          kicker="Make your next move"
-          title="Quick actions"
-          action={<Icon name="bolt" size={19} />}
-          className="overview-shortcuts"
-        >
+        <Panel title="Shortcuts" className="overview-shortcuts">
           <div className="overview-links">
-            {SHORTCUTS.map((item) => (
-              <Link key={item.to} to={item.to}>
-                <span className="overview-shortcut-icon">
-                  <Icon name={item.icon} size={19} />
-                </span>
-                <span>
-                  <strong>{item.title}</strong>
-                  <small>{item.note}</small>
-                </span>
-                <Icon name="chevron-right" size={17} />
-              </Link>
-            ))}
+            <Link to="/dashboard/pipeline">
+              <span className="overview-shortcut-icon">
+                <Icon name="activity" size={19} />
+              </span>
+              <span>
+                <strong>Live pipeline</strong>
+              </span>
+              <Icon name="chevron-right" size={17} />
+            </Link>
+            <Link to="/dashboard/jobs">
+              <span className="overview-shortcut-icon">
+                <Icon name="layers" size={19} />
+              </span>
+              <span>
+                <strong>History</strong>
+              </span>
+              <Icon name="chevron-right" size={17} />
+            </Link>
+            {/* <Link to="/dashboard/settings">
+              <span className="overview-shortcut-icon">
+                <Icon name="bolt" size={19} />
+              </span>
+              <span>
+                <strong>Settings</strong>
+              </span>
+              <Icon name="chevron-right" size={17} />
+            </Link> */}
           </div>
         </Panel>
       </div>
 
       <Panel
-        kicker="Your creative output"
-        title="Recent campaigns"
+        title="Recent"
         action={
           <Link className="overview-text-link" to="/dashboard/jobs">
-            View all campaigns <Icon name="arrow-right" size={16} />
+            All <Icon name="arrow-right" size={16} />
           </Link>
         }
         className="overview-history"
@@ -140,7 +142,7 @@ export default function OverviewPage() {
             <div className="overview-recent-heading" aria-hidden="true">
               <span>Campaign</span>
               <span>Status</span>
-              <span>Last updated</span>
+              <span>Updated</span>
               <span />
             </div>
             <ul className="overview-recent">
@@ -157,7 +159,7 @@ export default function OverviewPage() {
                       </span>
                       <span>
                         <strong className="overview-recent-title">
-                          {job.title || job.brief || "Untitled campaign"}
+                          {job.title || job.brief || "Untitled"}
                         </strong>
                         <small className="job-id">#{job.id.slice(0, 8)}</small>
                       </span>
@@ -172,18 +174,11 @@ export default function OverviewPage() {
               ))}
             </ul>
           </div>
-        ) : jobsError ? (
-          <p className="empty-panel">Your campaign history is temporarily unavailable.</p>
         ) : (
           <EmptyState
             icon="layers"
-            title="Make something worth sharing"
-            description="Your campaigns will live here. Start with a brief and let your agent bring it to life."
-            action={
-              <Button to="/dashboard/compose" variant="ghost" size="sm" icon="plus">
-                Create your first campaign
-              </Button>
-            }
+            title="No campaigns yet"
+            description="Start with Make a video or Plan my week above."
           />
         )}
       </Panel>

@@ -354,32 +354,42 @@ Return only JSON conforming to the supplied schema. No markdown fences. Write th
 _KM_INSTRUCTIONS = """អ្នកជាអ្នកដឹកនាំច្នៃប្រឌិតជាន់ខ្ពស់សម្រាប់វីដេអូផ្សព្វផ្សាយខ្លីបញ្ឈរ (TikTok / Reels / Shorts) ជាភាសាខ្មែរ។
 
 ### គោលការណ៍ចម្បង
-បំប្លែងព័ត៌មានអាជីវកម្មពិតឱ្យទៅជាស្គ្រីបវីដេអូខ្លី 9:16 ដែលទាក់ទាញចំណាប់អារម្មណ៍ភ្លាមៗក្នុង ៣ វិនាទីដំបូង និងជំរុញឱ្យអតិថិជនធ្វើសកម្មភាព។
+បំប្លែងព័ត៌មានអាជីវកម្មពិតឱ្យទៅជាស្គ្រីបវីដេអូខ្លី 9:16 គុណភាពខ្ពស់ ដែលទាក់ទាញចំណាប់អារម្មណ៍ភ្លាមៗក្នុង ៣ វិនាទីដំបូង និងជំរុញឱ្យអតិថិជនខ្មែរធ្វើសកម្មភាព។
 
-### ច្បាប់សរសេរស្គ្រីប
-១. មិនប្រឌិតព័ត៌មាន៖ ប្រើតែព័ត៌មានពិតដែលបានផ្ដល់ (ឈ្មោះអាជីវកម្ម, ការផ្ដល់ជូន, ទីតាំង, ទំនាក់ទំនង)។ ហាមបង្កើតតម្លៃ ឬការបញ្ចុះតម្លៃដែលគ្មានក្នុងព័ត៌មានដើម។
-២. ចង្វាក់និយាយបែបធម្មជាតិ៖ ហាមប្រើពាក្យផ្លូវការរឹងពេក។ ប្រើភាសានិយាយរួសរាយ ដូចមនុស្សពិតនិយាយប្រាប់មិត្តភក្តិ។
-៣. រយៈពេលនិងចំនួនពាក្យ៖
-   - ១ វិនាទី = អតិបរមា ៣ ទៅ ៤ ព្យាង្គ។
+### ច្បាប់ដាច់ខាតអំពីភាសាខ្មែរ (STRICT KHMER LANGUAGE PURITY)
+១. ភាសាខ្មែរសុទ្ធសាធ ១០០% (100% PURE KHMER):
+   - គ្រប់ hooks.text, scenes.narration, scenes.on_screen_text, title, និង caption ទាំងអស់ ត្រូវតែសរសេរជាភាសាខ្មែរសុទ្ធ និងប្រើតួអក្សរខ្មែរពិតប្រាកដ (Unicode Khmer Script)។
+   - ហាមដាច់ខាត (STRICTLY FORBIDDEN): មិនឱ្យលាយពាក្យអង់គ្លេសចូលក្នុងស្គ្រីប ឬការនិយាយឡើយ (ដូចជា "coffee", "latte", "menu", "discount", "free", "special", "fresh", "delicious", "order now", "call now", "welcome", "best")។ ត្រូវប្រើពាក្យខ្មែរជំនួសវិញ (ដូចជា "កាហ្វេ", "បញ្ជីមុខម្ហូប", "ការបញ្ចុះតម្លៃ", "ឥតគិតថ្លៃ / ថែមជូន", "ពិសេស", "ស្រស់ៗ", "ឈ្ងុយឆ្ងាញ់", "កុម្ម៉ង់ឥឡូវនេះ", "សូមស្វាគមន៍")។
+   - ហាមដាច់ខាតមិនឱ្យមានតួអក្សរថៃ (Thai characters) ឬតួអក្សរវៀតណាម (Vietnamese characters) ឬភាសាដទៃឡើយ។
+   - ហាមសរសេរអក្សរឡាតាំងកាត់ខ្មែរ (No Latin / karaoke transliteration ដូចជា "suosdey", "bong oun", "som tohs")។
+   - ករណីលើកលែងតែមួយគត់៖ ឈ្មោះម៉ាកយីហោជាក់លាក់ដែលមិនអាចបកប្រែបាន (Brand Name) ឬតំណភ្ជាប់គេហទំព័រ / Username (ដូចជា @username ឬ URL)។
+២. ភាសានិយាយបែបធម្មជាតិ និងទាក់ទាញ (NATURAL CONVERSATIONAL KHMER):
+   - ប្រើភាសានិយាយបែបសម័យ ស្រួលស្តាប់ រួសរាយ និងស៊ីវិល័យ ដូចមនុស្សខ្មែរពិតប្រាកដនិយាយប្រាប់មិត្តភក្តិ។
+   - ហាមបកប្រែពាក្យទល់ពាក្យបែបម៉ាស៊ីន (No mechanical word-by-word machine translation)។
+   - ហាមប្រើពាក្យរដ្ឋបាលរឹងស្តូកដែលមិនស័ក្តិសមជាមួយវីដេអូ TikTok/Reels។
+
+### ច្បាប់សរសេរស្គ្រីប និងភាពជាក់ស្តែង
+១. មិនប្រឌិតព័ត៌មាន (ZERO HALLUCINATIONS): ប្រើតែព័ត៌មានពិតដែលបានផ្ដល់ (ឈ្មោះអាជីវកម្ម, ការផ្ដល់ជូន, ទីតាំង, ទំនាក់ទំនង) ក្នុង factual_metadata។ ហាមបង្កើតតម្លៃ ឬការបញ្ចុះតម្លៃដែលគ្មានក្នុងព័ត៌មានដើម។ រក្សា business_name, offer និង contact ដូច factual_metadata។
+២. រយៈពេលនិងចង្វាក់និយាយ (SPEECH CADENCE):
+   - ១ វិនាទី = អតិបរមា ៣ ទៅ ៤ ព្យាង្គ/ពាក្យខ្មែរខ្លី។
    - ឈុត ៣ វិនាទី = អតិបរមា ៨ ទៅ ១០ ពាក្យ។
    - ហាមសរសេរវែងពេកដែលធ្វើឱ្យអ្នកនិយាយមិនទាន់ ឬអានមិនទាន់។
+៣. on_screen_text ត្រូវជាចំណងជើងខ្លីទាក់ភ្នែក (២ ទៅ ៥ ពាក្យជាភាសាខ្មែរ) ខុសពី narration។
 
 ### សារទាក់ទាញដំបូង (HOOKS) ទាំង ៣ ប្រភេទ — កំណត់ archetype ខុសគ្នា៖
-- Hook 1 archetype pain_agitation / Hook 2 curiosity_intrigue / Hook 3 value_offer
-- Hook 1 (ដោះស្រាយបញ្ហា/ឈឺចាប់)៖ រំលេចបញ្ហាដែលអតិថិជនជួបប្រទះរាល់ថ្ងៃ។
-- Hook 2 (ការចង់ដឹង/អាថ៌កំបាំង)៖ បង្ហាញកន្លែង ឬរសជាតិពិសេសដែលមនុស្សតិចតួចធ្លាប់ដឹង។
-- Hook 3 (ការផ្ដល់ជូន/អត្ថប្រយោជន៍)៖ បង្ហាញការផ្ដល់ជូន ឬចំណុចល្អឯកភ្លាមៗ។
+- Hook 1 archetype pain_agitation (ដោះស្រាយបញ្ហា/ឈឺចាប់)៖ រំលេចបញ្ហាដែលអតិថិជនជួបប្រទះរាល់ថ្ងៃជាភាសាខ្មែរ។
+- Hook 2 archetype curiosity_intrigue (ការចង់ដឹង/អាថ៌កំបាំង)៖ បង្ហាញកន្លែង ឬរសជាតិពិសេសដែលមនុស្សតិចតួចធ្លាប់ដឹង។
+- Hook 3 archetype value_offer (ការផ្ដល់ជូន/អត្ថប្រយោជន៍)៖ បង្ហាញការផ្ដល់ជូន ឬចំណុចល្អឯកភ្លាមៗ (កុំប្រឌិតការផ្ដល់ជូន)។
+- Hook នីមួយៗត្រូវខ្លី និយាយចប់ក្នុង ២ ទៅ ៤ វិនាទី (ក្រោម ១២ ពាក្យ)។
 
 ### រចនាសម្ព័ន្ធឈុត (scenes)
-- ឈុតទី ១ (Hook)៖ ២.៥ ទៅ ៣.៥ វិនាទី (ប្រើ Hook ដែលបានជ្រើស)។
-- ឈុតកណ្ដាល៖ បង្ហាញផលិតផល សេវាកម្ម ឬបរិយាកាសជាក់ស្ដែង។
-- ឈុតបញ្ចប់ (CTA)៖ ៣ ទៅ ៤ វិនាទី បញ្ចប់ដោយការអំពាវនាវច្បាស់លាស់ និងទីតាំង/តេលេក្រាម។
+- ឈុតទី ១ (The Hook): ២.៥ ទៅ ៣.៥ វិនាទី ប្រើ Hook ដែលបានជ្រើសរើសជា narration។
+- ឈុតកណ្ដាល៖ បង្ហាញផលិតផល សេវាកម្ម ឬបរិយាកាសជាក់ស្ដែង។ ភ្ជាប់ទៅ asset_id បើមានរូបភាពសមស្រប បើគ្មានដាក់ null។
+- ឈុតបញ្ចប់ (CTA): ៣ ទៅ ៤ វិនាទី អំពាវនាវឱ្យធ្វើសកម្មភាពច្បាស់លាស់ បញ្ជាក់ទីតាំង ឬទំនាក់ទំនង/តេលេក្រាមពិតប្រាកដ។
+- visual_direction: សរសេរសេចក្តីណែនាំប្លង់កាមេរ៉ាខ្លីច្បាស់លាស់ជាភាសាអង់គ្លេសសម្រាប់ម៉ាស៊ីនផលិតវីដេអូ (Shot Type, Action, Lighting) ដូចជា "Macro close-up: ...", "Cinematic panning shot: ...".
 
 ឆ្លើយតបជា JSON សុទ្ធតាម schema ដែលបានផ្ដល់។ រក្សា JSON keys ជាភាសាអង់គ្លេស។
 Make the video in Khmer language.
-៤. on_screen_text ត្រូវជាចំណងជើងខ្លី (2–5 ពាក្យ) ខុសពី narration។
-រក្សា business_name, offer និង contact ដូច factual_metadata។ ជ្រើស asset_id ឬ null។
-កំណត់ hook archetype ខុសគ្នា៖ pain_agitation, curiosity_intrigue, value_offer។
 """
 
 def _call_json(settings: Settings, prompt: str, *, language: str) -> dict:
@@ -434,7 +444,7 @@ def draft_storyboard(
 ) -> dict:
     facts = _business_facts(brief, sources)
     target_duration = _target_duration_seconds(brief, sources)
-    prompt = json.dumps({
+    prompt_payload = {
         "schema": Storyboard.model_json_schema(), "language": language,
         "factual_metadata": facts, "business_brief": brief,
         "sources": llm._sources_blob(sources), "uploaded_assets": file_assets(sources),
@@ -444,7 +454,15 @@ def draft_storyboard(
             f"(hard limits {int(MIN_STORYBOARD_DURATION)}–{int(MAX_STORYBOARD_DURATION)}). "
             "Prefer 3–6 scenes. Opening scene stays 2–5 seconds."
         ),
-    }, ensure_ascii=False)
+    }
+    if language == "km":
+        prompt_payload["khmer_language_rule"] = (
+            "CRITICAL: All narration, hooks, on_screen_text, title, and caption MUST be 100% pure Khmer language written in Khmer script (អក្សរខ្មែរ). "
+            "NEVER mix English words (e.g. coffee, welcome, fresh, discount), Thai, or Vietnamese into the script. "
+            "Translate all concepts into natural, conversational, modern spoken Khmer. "
+            "Only retain the exact brand name or username in Latin script if untranslatable."
+        )
+    prompt = json.dumps(prompt_payload, ensure_ascii=False)
     if language == "km":
         prompt += "\nMake the video in Khmer language."
     raw = _call_json(settings, prompt, language=language)
@@ -477,15 +495,21 @@ def draft_storyboard(
     except Exception as first_error:
         # One repair pass for cadence, schema, or invented-claim failures.
         logger.warning("Storyboard draft failed once: %s", first_error)
-        repair_prompt = json.dumps({
-            "repair": (
-                "Your previous JSON failed validation. Return a complete corrected storyboard. "
-                "Shorten every scene narration so speech cadence fits duration "
-                "(English ≤2.4 words/sec; Khmer ≤3.8 chunks/sec). "
-                "Do not invent prices, discounts, freebies, sales, or offers — promote only the "
-                "stated customer benefit when factual_metadata.offer is empty. "
-                "Keep factual_metadata fields unchanged. Opening scene must be 2–5 seconds."
-            ),
+        repair_msg = (
+            "Your previous JSON failed validation. Return a complete corrected storyboard. "
+            "Shorten every scene narration so speech cadence fits duration "
+            "(English ≤2.4 words/sec; Khmer ≤3.8 chunks/sec). "
+            "Do not invent prices, discounts, freebies, sales, or offers — promote only the "
+            "stated customer benefit when factual_metadata.offer is empty. "
+            "Keep factual_metadata fields unchanged. Opening scene must be 2–5 seconds."
+        )
+        if language == "km":
+            repair_msg += (
+                " All narration, hooks, and on_screen_text MUST be 100% pure, natural Khmer script "
+                "without any mixed English, Thai, or Vietnamese words."
+            )
+        repair_payload = {
+            "repair": repair_msg,
             "previous_error": str(first_error),
             "previous_draft": raw,
             "schema": Storyboard.model_json_schema(),
@@ -494,7 +518,12 @@ def draft_storyboard(
             "business_brief": brief,
             "sources": llm._sources_blob(sources),
             "uploaded_assets": file_assets(sources),
-        }, ensure_ascii=False)
+        }
+        if language == "km":
+            repair_payload["khmer_language_rule"] = (
+                "Ensure 100% pure Khmer language for all spoken lines and text overlays."
+            )
+        repair_prompt = json.dumps(repair_payload, ensure_ascii=False)
         if language == "km":
             repair_prompt += "\nMake the video in Khmer language."
         raw = _normalize_raw(_call_json(settings, repair_prompt, language=language))
@@ -515,11 +544,16 @@ def revise_storyboard(
         raise ValueError("Choose a supported revision.")
     if action == "shorter" and sum(scene["duration_seconds"] for scene in original["scenes"]) <= 10.01:
         raise ValueError("This script is already at the minimum 10-second length.")
-    prompt = json.dumps({
+    revision_payload = {
         "revision": scopes[action], "approved_script": original,
         "business_brief": brief, "sources": llm._sources_blob(sources),
         "schema": Storyboard.model_json_schema(),
-    }, ensure_ascii=False)
+    }
+    if original["language"] == "km":
+        revision_payload["khmer_language_rule"] = (
+            "All narration, hooks, and on_screen_text must remain 100% pure, natural Khmer script without foreign words."
+        )
+    prompt = json.dumps(revision_payload, ensure_ascii=False)
     if original["language"] == "km":
         prompt += "\nMake the video in Khmer language."
     raw = _call_json(settings, prompt, language=original["language"])

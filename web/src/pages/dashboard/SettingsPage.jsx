@@ -9,15 +9,14 @@ import {
 } from "../../api";
 import Icon from "../../components/Icon";
 import {
-  Alert,
   Button,
   FormField,
   Input,
-  PageHeader,
   Panel,
   StatCard,
   Textarea,
 } from "../../components/ui";
+import { notify } from "../../toast";
 
 const EMPTY = {
   telegram_bot_token: "",
@@ -39,12 +38,8 @@ export default function SettingsPage() {
   const [facebookOauth, setFacebookOauth] = useState(null);
   const [pendingPages, setPendingPages] = useState([]);
   const [form, setForm] = useState(EMPTY);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
   async function load() {
     setLoading(true);
-    setError("");
     try {
       const data = await fetchIntegrations();
       const integ = data.integrations || {};
@@ -63,7 +58,7 @@ export default function SettingsPage() {
         clear_gemini_api_keys: false,
       }));
     } catch (err) {
-      setError(String(err.message || err));
+      notify.error(String(err.message || err));
     } finally {
       setLoading(false);
     }
@@ -77,13 +72,13 @@ export default function SettingsPage() {
     const fb = searchParams.get("facebook");
     if (!fb) return;
     if (fb === "connected") {
-      setMessage("Facebook Page connected.");
+      notify.success("Facebook Page connected.");
       load();
     } else if (fb === "pick") {
-      setMessage("Choose which Facebook Page to publish to.");
+      notify.info("Choose which Facebook Page to publish to.");
       load();
     } else if (fb === "error") {
-      setError(searchParams.get("message") || "Facebook Login failed.");
+      notify.error(searchParams.get("message") || "Facebook Login failed.");
     }
     setSearchParams({}, { replace: true });
   }, [searchParams, setSearchParams]);
@@ -95,8 +90,6 @@ export default function SettingsPage() {
   async function onSubmit(ev) {
     ev.preventDefault();
     setSaving(true);
-    setMessage("");
-    setError("");
     try {
       const payload = {
         telegram_user_id:
@@ -116,7 +109,7 @@ export default function SettingsPage() {
       }
       const data = await saveIntegrations(payload);
       setStatus(data.integrations || {});
-      setMessage("Integrations saved.");
+      notify.success("Integrations saved.");
       setForm((prev) => ({
         ...prev,
         telegram_bot_token: "",
@@ -125,7 +118,7 @@ export default function SettingsPage() {
         clear_gemini_api_keys: false,
       }));
     } catch (err) {
-      setError(String(err.message || err));
+      notify.error(String(err.message || err));
     } finally {
       setSaving(false);
     }
@@ -133,12 +126,11 @@ export default function SettingsPage() {
 
   async function onConnectFacebook() {
     setConnectingFb(true);
-    setError("");
     try {
       const { auth_url } = await startFacebookConnect();
       window.location.href = auth_url;
     } catch (err) {
-      setError(String(err.message || err));
+      notify.error(String(err.message || err));
       setConnectingFb(false);
     }
   }
@@ -146,13 +138,12 @@ export default function SettingsPage() {
   async function onDisconnectFacebook() {
     if (!confirm("Disconnect your Facebook Page?")) return;
     setSaving(true);
-    setError("");
     try {
       await disconnectFacebook();
-      setMessage("Facebook disconnected.");
+      notify.success("Facebook disconnected.");
       await load();
     } catch (err) {
-      setError(String(err.message || err));
+      notify.error(String(err.message || err));
     } finally {
       setSaving(false);
     }
@@ -160,14 +151,13 @@ export default function SettingsPage() {
 
   async function onSelectPage(pageId) {
     setSaving(true);
-    setError("");
     try {
       await selectFacebookPage(pageId);
-      setMessage("Page selected.");
+      notify.success("Page selected.");
       setPendingPages([]);
       await load();
     } catch (err) {
-      setError(String(err.message || err));
+      notify.error(String(err.message || err));
     } finally {
       setSaving(false);
     }
@@ -183,23 +173,7 @@ export default function SettingsPage() {
 
   return (
     <div className="dash-page">
-      <PageHeader
-        kicker="Account"
-        title="Integrations"
-        description="Connect Telegram, Gemini, and Facebook. Facebook uses Login — no pasting Page tokens. Other secrets stay encrypted after you save."
-      />
-
-      {loading ? <p className="empty-panel">Loading settings…</p> : null}
-      {error ? (
-        <Alert tone="danger" title="Error" className="mb-4">
-          {error}
-        </Alert>
-      ) : null}
-      {message ? (
-        <Alert tone="success" title="Success" className="mb-4">
-          {message}
-        </Alert>
-      ) : null}
+      {loading ? <p className="empty-panel">Loading…</p> : null}
 
       {!loading ? (
         <>
@@ -326,7 +300,7 @@ export default function SettingsPage() {
                       <span className="job-meta"> · ID {status.facebook_page_id}</span>
                     ) : null}
                   </p>
-                  <div className="hero-actions">
+                  <div className="settings-actions">
                     <Button
                       variant="primary"
                       size="sm"
@@ -347,7 +321,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
               ) : (
-                <div className="hero-actions">
+                <div className="settings-actions">
                   <Button
                     variant="primary"
                     size="sm"

@@ -78,7 +78,7 @@ const COPY = {
     rules: "ប្រើតែព័ត៌មានអាជីវកម្ម និងការអំពាវនាវដែលអ្នកប្រើប្រាស់បានផ្ដល់។ កុំបង្កើតតម្លៃ ការបញ្ចុះតម្លៃ កាលកំណត់ អាសយដ្ឋាន សក្ខីកម្មអតិថិជន ឬការអះអាងអំពីផលិតផល។ គំនិតច្នៃប្រឌិតត្រូវគោរពព័ត៌មានទាំងនេះ។",
     styleLabel: "រចនាប័ទ្មវីដេអូ", videoLengthLabel: "Target video length", notesLabel: "ការណែនាំច្នៃប្រឌិតបន្ថែម", templateLabel: "គំនិតច្នៃប្រឌិត",
     video: "បង្កើតវីដេអូផ្សព្វផ្សាយខ្លីបញ្ឈរ 9:16។ ទាក់ទាញចំណាប់អារម្មណ៍ក្នុង 3 វិនាទីដំបូង និងបញ្ចប់ដោយការអំពាវនាវច្បាស់លាស់មួយ។",
-    language: "បង្កើតសារផ្សព្វផ្សាយ ស្គ្រីប ការនិយាយ និងអត្ថបទក្នុងវីដេអូជាភាសាខ្មែរ។\nMake the video in Khmer language.",
+    language: "បង្កើតសារផ្សព្វផ្សាយ ស្គ្រីប ការនិយាយ និងអត្ថបទក្នុងវីដេអូជាភាសាខ្មែរសុទ្ធ ១០០%។ ហាមដាច់ខាតមិនឱ្យលាយពាក្យអង់គ្លេស ឬភាសាដទៃក្នុងស្គ្រីបឡើយ។\nMake the video in Khmer language.",
   },
 };
 
@@ -189,7 +189,13 @@ function requestFromDraft(draft) {
 export function validateCampaignStep(input, step) {
   const draft = normalizedDraft(input);
   const errors = {};
-  const check = index => step === index || step === 4;
+  // Granular steps 0–3 for field groups; "brief" = compressed UI screen; 4 = full generate check.
+  const briefUi = step === "brief";
+  const check = (index) => {
+    if (step === 4) return true;
+    if (briefUi) return index >= 1 && index <= 3;
+    return step === index;
+  };
   const fieldsByStep = {
     0: ["name", "description", "benefit", "location", "website"],
     1: ["audience"],
@@ -250,12 +256,27 @@ export function validateCampaignStep(input, step) {
       errors.assets = "One of the selected images is empty. Choose another file.";
     }
   }
-  if (step === 4) {
+  if (step === 4 || briefUi) {
     const request = requestFromDraft(draft);
     if (request.brief.length > 4000) errors.description = "Your campaign details are too long. Shorten the description or other details before generating.";
     if (request.notes.length > 4000) errors.extraNotes = "Your creative direction is too long. Shorten it before generating.";
   }
   return errors;
+}
+
+/** Light defaults so weekly planning only needs business + language/length/offer focus. */
+export function withWeeklyDefaults(input) {
+  const draft = createCampaignDraft(input);
+  return createCampaignDraft({
+    ...draft,
+    audience: String(draft.audience || "").trim()
+      || "Local customers and people nearby who would value this business.",
+    goal: CHOICES.goal.includes(draft.goal) ? draft.goal : "sales",
+    cta: CHOICES.cta.includes(draft.cta) ? draft.cta : "visit",
+    style: CHOICES.style.includes(draft.style) ? draft.style : "warm",
+    videoLength: CHOICES.videoLength.includes(draft.videoLength) ? draft.videoLength : "30",
+    language: CHOICES.language.includes(draft.language) ? draft.language : "en",
+  });
 }
 
 export function buildCampaignRequest(input) {

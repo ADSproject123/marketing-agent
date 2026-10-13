@@ -1,6 +1,7 @@
 import { CAMPAIGN_ASSET_LIMITS } from "../../campaign";
 import { TEMPLATES } from "../../templates";
 import Icon from "../Icon";
+import { Button } from "../ui";
 import { ChoiceGroup } from "./FormBits";
 import { STYLES, TEMPLATE_ICONS, VIDEO_LENGTHS } from "./constants";
 
@@ -18,16 +19,15 @@ export default function StepStyle({
         onChange={(value) => onDraftChange("videoLength", value)}
         compact
       />
-      <fieldset className="campaign-language" aria-describedby="campaign-language-hint">
-        <legend>Campaign language</legend>
+      <fieldset className="campaign-language">
+        <legend>Language</legend>
         <div className="campaign-language-options">
           <label className="campaign-language-option"><input type="radio" name="language" value="en" checked={draft.language === "en"} onChange={change("language")} /><span>English</span></label>
           <label className="campaign-language-option"><input type="radio" name="language" value="km" checked={draft.language === "km"} onChange={change("language")} /><span>Khmer <span className="campaign-language-native" lang="km">ខ្មែរ</span></span></label>
         </div>
-        <p className="field-hint" id="campaign-language-hint">The language for your captions, script, and video.</p>
       </fieldset>
-      <fieldset className="template-field" aria-describedby="campaign-template-hint">
-        <legend>Predefined creative angle</legend>
+      <fieldset className="template-field">
+        <legend>Creative angle</legend>
         <div className="template-grid" role="listbox" aria-label="Campaign templates">
           {TEMPLATES.map((item) => {
             const selected = draft.templateId === item.id;
@@ -57,10 +57,9 @@ export default function StepStyle({
             );
           })}
         </div>
-        <p className="field-hint" id="campaign-template-hint">Pick a preset or leave “Custom” / “Choose for me” and we’ll adapt to your details.</p>
       </fieldset>
-      <label className="field"><span>Anything else we should know? <span className="campaign-optional">Optional</span></span><textarea {...fieldProps("extraNotes")} value={draft.extraNotes} onChange={change("extraNotes")} maxLength={500} rows={3} placeholder="Brand colors, words to avoid, or an important detail to include." /></label>
-      <label className="field"><span>Source links <span className="campaign-optional">Optional</span></span><textarea {...fieldProps("urls")} value={draft.urls} onChange={change("urls")} maxLength={5000} rows={2} placeholder="https://yourbrand.com/product" /><span className="field-hint">Add up to 10 URLs, one per line, for product information or inspiration.</span></label>
+      <label className="field"><span>Notes <span className="campaign-optional">Optional</span></span><textarea {...fieldProps("extraNotes")} value={draft.extraNotes} onChange={change("extraNotes")} maxLength={500} rows={2} placeholder="Brand colors, words to avoid…" /></label>
+      <label className="field"><span>Source links <span className="campaign-optional">Optional</span></span><textarea {...fieldProps("urls")} value={draft.urls} onChange={change("urls")} maxLength={5000} rows={2} placeholder="https://yourbrand.com/product" /></label>
       <div className="field campaign-assets-field">
         <span>Logo & product photos <span className="campaign-optional">Optional</span></span>
         <label className={`campaign-assets-picker ${errors.assets ? "is-invalid" : ""}`}>
@@ -88,14 +87,15 @@ export default function StepStyle({
               <li key={`${item.file.name}-${item.file.size}-${index}`}>
                 <img src={item.url} alt="" />
                 <span>{item.file.name}</span>
-                <button
-                  type="button"
-                  className="ghost-btn campaign-assets-remove"
+                <Button
+                  variant="ghost"
+                  size="xs"
                   disabled={busy}
                   onClick={() => onDraftChange("assets", assets.filter((_, i) => i !== index))}
+                  className="campaign-assets-remove"
                 >
                   Remove
-                </button>
+                </Button>
               </li>
             ))}
           </ul>

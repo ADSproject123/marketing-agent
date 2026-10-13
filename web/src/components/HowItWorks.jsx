@@ -2,24 +2,24 @@ import Icon from "./Icon";
 
 const STEPS = [
   {
-    title: "Start with your idea",
-    icon: "file",
-    body: "Choose a template or write a brief. Add source links and creative direction to make it your own.",
-  },
-  {
-    title: "Let AI do the creative work",
+    title: "Choose a path",
     icon: "sparkles",
-    body: "Gemini develops your campaign and caption. NotebookLM turns the concept into a vertical video.",
+    body: "Make one video, or plan Mon / Wed / Fri.",
   },
   {
-    title: "Review and approve",
+    title: "Brief and script",
+    icon: "file",
+    body: "Pick a business, fill a short brief, review the script.",
+  },
+  {
+    title: "Generate",
+    icon: "activity",
+    body: "Follow progress on Live pipeline and History.",
+  },
+  {
+    title: "Approve",
     icon: "shield",
-    body: "Get a preview in Telegram. Approve when it’s ready, or decline to stop the campaign.",
-  },
-  {
-    title: "Share with your audience",
-    icon: "globe",
-    body: "After approval, your video and caption are published to your connected Facebook Page.",
+    body: "Approve in the app before anything publishes.",
   },
 ];
 
@@ -33,11 +33,8 @@ export default function HowItWorks({ compact = false }) {
     >
       {compact ? null : (
         <div className="how-head">
-          <p className="panel-kicker">A simpler creative workflow</p>
-          <h2 id="how-title">Your next campaign, in four steps.</h2>
-          <p className="how-lede">
-            From your first idea to your audience’s feed, with a clear review step before publishing.
-          </p>
+          <p className="panel-kicker">Workflow</p>
+          <h2 id="how-title">Script → generate → approve</h2>
         </div>
       )}
       <ol className="how-grid">

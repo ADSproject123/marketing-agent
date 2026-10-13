@@ -14,12 +14,12 @@ export const STEPS = {
     title: "NotebookLM",
     subtitle: "Short video",
     detail:
-      "Renders your approved scene plan, adds captions and a business end card, and checks the finished video.",
+      "Your video is generating here. Watch Live pipeline for progress; Telegram is a secondary notify.",
   },
   telegram: {
-    title: "Telegram",
-    subtitle: "Approve / Deny",
-    detail: "Preview lands here. You approve or deny — jobs are never started in Telegram.",
+    title: "Review",
+    subtitle: "Approve in app",
+    detail: "Approve or deny from Campaign history. Telegram also gets a preview notify.",
   },
   approve: {
     title: "Approve",
@@ -39,7 +39,7 @@ export const STEPS = {
   done: {
     title: "Posted",
     subtitle: "Complete",
-    detail: "Publish finished. Result link is sent back to Telegram.",
+    detail: "Publish finished. Status stays in History; Telegram may also get a result link.",
   },
 };
 
@@ -251,18 +251,18 @@ export function liveDetailFor(job, nodeId) {
   }
   if (nodeId === "notebooklm") {
     if (stage === "notebooklm" && status === "generating") {
-      return "Rendering the reviewed script, then adding captions and checking the output. This can take several minutes.";
+      return "Your video is generating… rendering the script, adding captions, and checking the output. This can take several minutes.";
     }
-    if (job.video_path) return "Short MP4 downloaded and ready for preview.";
-    if (job.title) return "Gemini done — waiting on NotebookLM short video.";
+    if (job.video_path) return "Short MP4 ready — open Campaign history to preview and approve.";
+    if (job.title) return "Script ready — your video is next in Live pipeline.";
     return STEPS.notebooklm.detail;
   }
   if (nodeId === "telegram") {
     if (status === "awaiting_approval") {
-      return "Preview sent. Waiting for your Approve or Deny in Telegram.";
+      return "Video ready. Approve or deny in Campaign history (Telegram also notified).";
     }
-    if (status === "denied") return "You denied this preview in Telegram.";
-    if (["posting", "posted"].includes(status)) return "You approved in Telegram.";
+    if (status === "denied") return "You denied this preview.";
+    if (["posting", "posted"].includes(status)) return "You approved this campaign.";
     return STEPS.telegram.detail;
   }
   if (nodeId === "deny") {

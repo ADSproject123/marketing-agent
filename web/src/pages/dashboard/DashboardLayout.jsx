@@ -7,10 +7,11 @@ import { DashboardProvider, useDashboard } from "../../dashboard/DashboardContex
 
 const PAGE_NAMES = {
   "/dashboard": "Overview",
-  "/dashboard/compose": "Create campaign",
+  "/dashboard/compose": "Make a video",
+  "/dashboard/weekly-plan": "Weekly plan",
   "/dashboard/pipeline": "Live pipeline",
-  "/dashboard/jobs": "Campaign history",
-  "/dashboard/settings": "Integrations",
+  "/dashboard/jobs": "History",
+  // "/dashboard/settings": "Integrations",
   "/dashboard/guide": "Getting started",
 };
 
@@ -19,7 +20,10 @@ function DashboardShell() {
   const { pathname } = useLocation();
   const { online, healthLabel } = useDashboard();
   const checking = healthLabel.startsWith("checking");
-  const isPipeline = pathname.replace(/\/+$/, "") === "/dashboard/pipeline";
+  const cleanPath = pathname.replace(/\/+$/, "");
+  const isPipeline = cleanPath === "/dashboard/pipeline";
+  const isHistory = cleanPath === "/dashboard/jobs";
+  const isCompose = cleanPath === "/dashboard/compose";
 
   useEffect(() => {
     setSidebarOpen(false);
@@ -68,20 +72,25 @@ function DashboardShell() {
                 <span className="sys-status-dot" aria-hidden="true" />
                 {checking ? "Connecting" : online ? "Service online" : "Service offline"}
               </span>
-              <Button
-                to="/dashboard/compose"
-                variant="primary"
-                size="sm"
-                icon="plus"
-                className="dash-topbar-create"
-              >
-                New campaign
-              </Button>
+              {!isCompose && (
+                <Button
+                  to="/dashboard/compose"
+                  variant="primary"
+                  size="sm"
+                  icon="plus"
+                  className="dash-topbar-create"
+                >
+                  Make a video
+                </Button>
+              )}
             </div>
           </header>
         )}
 
-        <main className={`dash-content${isPipeline ? " pipeline-workspace" : ""}`} id="main-content">
+        <main
+          className={`dash-content${isPipeline ? " pipeline-workspace" : ""}${isHistory ? " history-workspace" : ""}`}
+          id="main-content"
+        >
           <Outlet />
         </main>
       </div>

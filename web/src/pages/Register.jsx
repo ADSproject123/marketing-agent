@@ -4,7 +4,8 @@ import { useAuth } from "../auth";
 import MarketingHeader from "../components/MarketingHeader";
 import SiteFooter from "../components/SiteFooter";
 import Icon from "../components/Icon";
-import { Alert, Button, FormField, Input } from "../components/ui";
+import { Button, FormField, Input } from "../components/ui";
+import { notify } from "../toast";
 
 export default function Register() {
   const { register, isAuthenticated, loading } = useAuth();
@@ -14,7 +15,6 @@ export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   if (!loading && isAuthenticated) {
@@ -24,9 +24,8 @@ export default function Register() {
   async function onSubmit(ev) {
     ev.preventDefault();
     if (submitting) return;
-    setError("");
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      notify.warning("Passwords do not match.");
       return;
     }
     setSubmitting(true);
@@ -38,7 +37,7 @@ export default function Register() {
       });
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      setError(String(err.message || err));
+      notify.error(String(err.message || err));
     } finally {
       setSubmitting(false);
     }
@@ -163,12 +162,6 @@ export default function Register() {
                   placeholder="Repeat password"
                 />
               </FormField>
-
-              {error ? (
-                <Alert tone="danger" role="alert">
-                  {error}
-                </Alert>
-              ) : null}
 
               <Button
                 type="submit"

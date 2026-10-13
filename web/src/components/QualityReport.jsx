@@ -6,14 +6,17 @@ export default function QualityReport({ report }) {
   const attention = report.checks.filter((check) => check.status !== "pass").length;
 
   return (
-    <section className="quality-report" aria-label="Video checks">
-      <div className="quality-report-head">
-        <h3>Video checks</h3>
+    <div className="history-card history-quality-card" aria-label="Video quality and policy checks">
+      <div className="history-card-header">
+        <div className="history-card-title-group">
+          <Icon name="shield" size={17} className="history-card-icon" />
+          <h3>Quality & Safety checks</h3>
+        </div>
         <Badge variant={attention ? "warning" : "success"} size="sm" dot>
-          {attention ? `${attention} to review` : "Checks passed"}
+          {attention ? `${attention} to review` : "All passed"}
         </Badge>
       </div>
-      <ul>
+      <ul className="history-quality-list">
         {report.checks.map((check) => {
           const isPass = check.status === "pass";
           const isFail = check.status === "fail";
@@ -21,21 +24,21 @@ export default function QualityReport({ report }) {
           const statusLabel = isPass ? "Passed" : isFail ? "Needs attention" : "Review";
 
           return (
-            <li key={check.id} className={`is-${check.status}`}>
-              <span className="quality-check-icon" aria-hidden="true">
-                <Icon name={isPass ? "check" : "alert"} size={15} />
+            <li key={check.id} className={`quality-check-item is-${check.status}`}>
+              <span className={`quality-check-icon is-${check.status}`} aria-hidden="true">
+                <Icon name={isPass ? "check" : "alert"} size={14} />
               </span>
-              <div>
+              <div className="quality-check-info">
                 <strong>{check.label}</strong>
                 <p>{check.detail}</p>
               </div>
-              <Badge variant={badgeVariant} size="sm" className="quality-check-status-badge">
+              <Badge variant={badgeVariant} size="sm" className="quality-check-badge">
                 {statusLabel}
               </Badge>
             </li>
           );
         })}
       </ul>
-    </section>
+    </div>
   );
 }

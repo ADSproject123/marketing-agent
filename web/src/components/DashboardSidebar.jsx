@@ -7,10 +7,11 @@ import { Badge } from "./ui";
 
 const NAV = [
   { to: "/dashboard", end: true, label: "Overview", icon: "grid" },
-  { to: "/dashboard/compose", label: "Create campaign", icon: "sparkles" },
+  { to: "/dashboard/compose", label: "Make a video", icon: "sparkles" },
+  { to: "/dashboard/weekly-plan", label: "Weekly plan", icon: "clock" },
   { to: "/dashboard/pipeline", label: "Live pipeline", icon: "activity" },
-  { to: "/dashboard/jobs", label: "Campaign history", icon: "layers" },
-  { to: "/dashboard/settings", label: "Integrations", icon: "lock" },
+  { to: "/dashboard/jobs", label: "History", icon: "layers" },
+  // { to: "/dashboard/settings", label: "Integrations", icon: "lock" },
   { to: "/dashboard/guide", label: "Getting started", icon: "book" },
 ];
 

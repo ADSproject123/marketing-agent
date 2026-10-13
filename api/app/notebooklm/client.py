@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from pathlib import Path
 from urllib.parse import urlparse
 
 from notebooklm import NotebookLMClient, VideoFormat, VideoStyle
+from notebooklm.exceptions import ArtifactDownloadError
 
 from app.config import Settings
 from app.jobs.store import JobSource
@@ -407,11 +409,39 @@ async def generate_video_overview(
             await progress_callback("Downloading video…")
 
         dest = settings.videos_dir / f"{job_id}.mp4"
-        await client.artifacts.download_video(
-            notebook_id,
-            str(dest),
-            artifact_id=artifact_id if artifact_id != task_id else None,
-        )
+        download_artifact = artifact_id if artifact_id != task_id else None
+        last_download_error: BaseException | None = None
+        # Google CDN (lh3.googleusercontent.com) often ConnectTimeouts on first try.
+        for attempt in range(1, 4):
+            try:
+                await client.artifacts.download_video(
+                    notebook_id,
+                    str(dest),
+                    artifact_id=download_artifact,
+                )
+                last_download_error = None
+                break
+            except Exception as exc:
+                transient = isinstance(exc, (ArtifactDownloadError, TimeoutError, OSError))
+                name = type(exc).__name__
+                transient = transient or ("Timeout" in name) or ("Network" in name)
+                if not transient:
+                    raise
+                last_download_error = exc
+                logger.warning(
+                    "NotebookLM video download attempt %s/3 failed for job %s: %s",
+                    attempt,
+                    job_id,
+                    exc,
+                )
+                if progress_callback and attempt < 3:
+                    await progress_callback(
+                        f"Download timed out — retrying ({attempt}/3)…"
+                    )
+                if attempt < 3:
+                    await asyncio.sleep(2 * attempt)
+        if last_download_error is not None:
+            raise last_download_error
         if not dest.exists() or dest.stat().st_size < 1000:
             raise RuntimeError(f"Downloaded video missing or too small: {dest}")
 
