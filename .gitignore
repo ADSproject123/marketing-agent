@@ -9,6 +9,7 @@ data/uploads/*
 data/downloads/*
 !data/downloads/.gitkeep
 data/*.db
+data/*.db-*
 *.mp4
 .DS_Store
 .pytest_cache/
