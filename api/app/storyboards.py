@@ -38,14 +38,14 @@ HOOK_ARCHETYPE_ORDER: tuple[HookArchetype, ...] = (
 
 
 class Hook(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
     id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
     archetype: HookArchetype = "pain_agitation"
     text: str = Field(min_length=1, max_length=180)
 
 
 class Scene(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
     id: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
     duration_seconds: float = Field(ge=1, le=20, allow_inf_nan=False)
     narration: str = Field(min_length=1, max_length=600)
@@ -183,7 +183,7 @@ def _ensure_hook_archetypes(data: dict) -> dict:
 
 
 class Storyboard(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    model_config = ConfigDict(extra="ignore", str_strip_whitespace=True)
     language: Literal["en", "km"]
     title: str = Field(min_length=1, max_length=60)
     caption: str = Field(min_length=1, max_length=1000)
@@ -430,10 +430,36 @@ def _assert_facts(plan: dict, brief: str, sources: list[JobSource]) -> None:
     )
     combined = "\n".join([plan["title"], plan["caption"], spoken_text])
     allowed = "\n".join([brief, *(source.value for source in sources)])
-    for pattern in (r"https?://[^\s<>\"']+", r"(?<!\w)\+?\d[\d ()-]{5,}\d(?!\w)"):
-        for match in re.finditer(pattern, combined):
-            if match.group() not in allowed:
-                raise ValueError("The script added contact details that were not supplied. Please try again.")
+
+    allowed_urls = set()
+    for u in re.findall(r"https?://[^\s<>\"']+", allowed):
+        clean_u = u.rstrip(".,;:!?)'\"/").lower()
+        allowed_urls.add(clean_u)
+        allowed_urls.add(re.sub(r"^https?://(www\.)?", "", clean_u))
+
+    for match in re.finditer(r"https?://[^\s<>\"']+", combined):
+        raw_match = match.group().rstrip(".,;:!?)'\"/")
+        clean_match = raw_match.lower()
+        clean_no_www = re.sub(r"^https?://(www\.)?", "", clean_match)
+        if (
+            clean_match not in allowed_urls
+            and clean_no_www not in allowed_urls
+            and raw_match not in allowed
+        ):
+            raise ValueError("The script added contact details that were not supplied. Please try again.")
+
+    allowed_digits = set()
+    for m in re.finditer(r"(?<!\w)\+?\d[\d ()-]{5,}\d(?!\w)", allowed):
+        digits = re.sub(r"\D", "", m.group())
+        if len(digits) >= 6:
+            allowed_digits.add(digits)
+
+    for match in re.finditer(r"(?<!\w)\+?\d[\d ()-]{5,}\d(?!\w)", combined):
+        raw_match = match.group().rstrip(".,;:!?)'\"")
+        digits = re.sub(r"\D", "", raw_match)
+        if len(digits) >= 6 and digits not in allowed_digits and raw_match not in allowed:
+            raise ValueError("The script added contact details that were not supplied. Please try again.")
+
     no_offer = not _business_facts(brief, sources)["offer"]
     if no_offer and any(term in combined for term in PROMOTIONAL_TERMS_KM):
         raise ValueError("The script added an offer that was not supplied. Please try again.")
