@@ -3515,6 +3515,26 @@ main { flex: 1; width: min(100%, calc(var(--max) + var(--pad) * 2)); margin: 0 a
   color: #991b1b;
 }
 
+.schedules-list-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.schedules-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.schedules-section-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
 .schedules-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(370px, 1fr));

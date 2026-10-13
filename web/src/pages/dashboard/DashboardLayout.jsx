@@ -11,6 +11,7 @@ const PAGE_NAMES = {
   "/dashboard/weekly-plan": "Weekly plan",
   "/dashboard/pipeline": "Live pipeline",
   "/dashboard/jobs": "History",
+  "/dashboard/schedules": "Automated Schedules",
   // "/dashboard/settings": "Integrations",
   "/dashboard/guide": "Getting started",
 };

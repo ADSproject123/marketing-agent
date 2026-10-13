@@ -295,22 +295,6 @@ export default function SchedulesPage() {
 
   return (
     <div className="schedules-page">
-      <header className="page-header schedules-header">
-        <div className="page-header-content">
-          <p className="panel-kicker">Automation & Scheduling</p>
-          <h1 className="page-title">Automated Schedules</h1>
-          <p className="page-description">
-            Schedule automatic AI video creation and hands-free publishing directly to your connected Facebook Page.
-          </p>
-        </div>
-        <div className="page-header-actions">
-          <Button variant="primary" size="md" icon="plus" onClick={openCreateModal}>
-            New Schedule
-          </Button>
-        </div>
-      </header>
-
-      {/* Stats row */}
       <section className="schedules-stats-grid" aria-label="Schedule statistics">
         <div className="sched-stat-card">
           <div className="sched-stat-icon">
@@ -379,7 +363,14 @@ export default function SchedulesPage() {
             }
           />
         ) : (
-          <div className="schedules-grid">
+          <div className="schedules-list-wrap">
+            <div className="schedules-bar">
+              <h2 className="schedules-section-title">Your Automated Schedules</h2>
+              <Button variant="primary" size="sm" icon="plus" onClick={openCreateModal}>
+                New Schedule
+              </Button>
+            </div>
+            <div className="schedules-grid">
             {schedules.map((sched) => {
               const isRunning = runningId === sched.id || sched.last_status === "running";
               return (
@@ -507,6 +498,7 @@ export default function SchedulesPage() {
                 </article>
               );
             })}
+            </div>
           </div>
         )}
       </main>
